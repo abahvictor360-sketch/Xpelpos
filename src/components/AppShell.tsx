@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import {
   BarChart3,
   Boxes,
+  Download,
   LayoutDashboard,
   Menu,
   Receipt,
@@ -17,6 +18,7 @@ import {
 import { cx } from "@/lib/utils";
 import SyncBadge from "./SyncBadge";
 import InstallButton from "./InstallButton";
+import Toaster from "./Toaster";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -24,6 +26,7 @@ const NAV = [
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/sales", label: "Sales & Reports", icon: Receipt },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/install", label: "Install App", icon: Download },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -71,6 +74,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cx(
+          "print-hide",
           "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-ink-800 p-4 text-white transition-transform lg:static lg:translate-x-0",
           menuOpen ? "translate-x-0" : "-translate-x-full",
         )}
@@ -117,7 +121,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-black/5 bg-[#f4f4f1]/85 px-4 py-3 backdrop-blur lg:px-8">
+        <header className="print-hide sticky top-0 z-20 flex items-center gap-3 border-b border-black/5 bg-[#f4f4f1]/85 px-4 py-3 backdrop-blur lg:px-8">
           <button
             className="rounded-lg border border-black/10 bg-white p-2 lg:hidden"
             onClick={() => setMenuOpen(true)}
@@ -139,6 +143,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 px-4 py-5 lg:px-8 lg:py-6">{children}</main>
+        <Toaster />
       </div>
     </div>
   );

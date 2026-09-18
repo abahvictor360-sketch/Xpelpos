@@ -58,3 +58,40 @@ body {
   background: rgba(31, 30, 25, 0.18);
   border-radius: 999px;
 }
+
+/* Printing: only the receipt goes on paper, at thermal-roll width. */
+@media print {
+  @page {
+    margin: 6mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  body.printing-receipt > *:not(.print-receipt-root) {
+    display: none !important;
+  }
+
+  body.printing-receipt .print-receipt-root {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .print-receipt-sheet {
+    width: 72mm !important;
+    max-width: 72mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #000 !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+}

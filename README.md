@@ -8,14 +8,20 @@ synced to Supabase in the background, so the till keeps working when the network
 ## What it does
 
 - **Fast product lookup** — type 3 letters, arrow keys to choose, `Enter` to add. Matches
-  name, SKU, category, brand and barcode.
+  name, SKU, category, brand and barcode. `F2` jumps to the search box, `F9` closes the
+  sale.
 - **Multi-item cart** — quantities, per-line totals, discount, amount collected and
   automatic change calculation.
 - **Payment methods** — cash, bank transfer or card, recorded per sale.
-- **Receipts** — on-screen receipt with a print button (works with A4 and thermal printers
-  through the browser print dialog).
-- **Inventory** — add products with opening quantity, edit prices, restock, low-stock and
-  out-of-stock alerts, stock value, inventory export.
+- **Receipts** — on-screen receipt carrying your store name, address, phone, VAT and
+  footer, printed at 72mm for thermal rolls (A4 works too). Any past sale can be reopened
+  and reprinted from Sales & Reports.
+- **VAT** — set a rate in Settings and it is applied at checkout, shown on the receipt and
+  stored per sale.
+- **Inventory** — add products with opening quantity, edit every field, restock, archive or
+  permanently delete (a product that appears on a past receipt can only be archived, so
+  history stays intact), restore archived products, low-stock and out-of-stock alerts,
+  stock value, inventory export.
 - **Sales & reports** — filter by date range and payment method, void a sale (stock goes
   back), and export to **Excel (.xlsx), PDF (.pdf) and Word (.docx)**.
 - **Analytics** — revenue trend, gross profit, average basket, best-selling products and

@@ -1,6 +1,7 @@
 "use client";
 
 import { getDb, getSetting, setSetting } from "./db";
+import { deleteRemoteProduct } from "./sync";
 import type { CartLine, PaymentMethod, Product, Sale, SaleItem, StockMovement } from "./types";
 import { buildReceiptNo, newId, round2 } from "./utils";
 
@@ -133,6 +134,7 @@ export async function restockProduct(id: string, quantity: number, note = "Resto
   });
 }
 
+/** Soft delete: hides the product but keeps it on past receipts, and syncs as a tombstone. */
 export async function archiveProduct(id: string): Promise<void> {
   const existing = await getDb().products.get(id);
   if (!existing) return;
@@ -144,6 +146,53 @@ export async function archiveProduct(id: string): Promise<void> {
     updatedAt: now,
     syncState: "pending",
   });
+}
+
+export async function restoreProduct(id: string): Promise<void> {
+  const existing = await getDb().products.get(id);
+  if (!existing) return;
+  const now = new Date().toISOString();
+  await getDb().products.put({
+    ...existing,
+    isActive: true,
+    deletedAt: null,
+    updatedAt: now,
+    syncState: "pending",
+  });
+}
+
+export async function productSaleCount(id: string): Promise<number> {
+  return getDb().saleItems.where("productId").equals(id).count();
+}
+
+/**
+ * Wipes a product locally and, when the cloud is reachable, remotely too.
+ * Refuses products that appear on a receipt — deleting those would corrupt
+ * past sales, so those are archived instead.
+ */
+export async function deleteProductPermanently(
+  id: string,
+): Promise<{ deleted: boolean; reason?: string }> {
+  const dbi = getDb();
+  const existing = await dbi.products.get(id);
+  if (!existing) return { deleted: false, reason: "Product not found." };
+
+  if ((await productSaleCount(id)) > 0) {
+    await archiveProduct(id);
+    return { deleted: false, reason: "This product appears on past sales, so it was archived instead." };
+  }
+
+  const remote = await deleteRemoteProduct(id);
+  if (!remote.ok) {
+    await archiveProduct(id);
+    return { deleted: false, reason: remote.reason };
+  }
+
+  await dbi.transaction("rw", dbi.products, dbi.stockMovements, async () => {
+    await dbi.stockMovements.where("productId").equals(id).delete();
+    await dbi.products.delete(id);
+  });
+  return { deleted: true };
 }
 
 /** Type-ahead search: matches name, SKU, category, brand or barcode. */
@@ -176,7 +225,7 @@ export interface CheckoutInput {
   lines: CartLine[];
   paymentMethod: PaymentMethod;
   discount?: number;
-  tax?: number;
+  vatRate?: number;
   amountPaid?: number;
   customerName?: string;
   customerPhone?: string;
@@ -190,11 +239,13 @@ export interface CheckoutResult {
   items: SaleItem[];
 }
 
-export function cartTotals(lines: CartLine[], discount = 0, tax = 0) {
+export function cartTotals(lines: CartLine[], discount = 0, vatRate = 0) {
   const subtotal = round2(lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0));
-  const total = round2(Math.max(0, subtotal - discount + tax));
+  const taxable = Math.max(0, subtotal - discount);
+  const tax = round2(taxable * (vatRate / 100));
+  const total = round2(taxable + tax);
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
-  return { subtotal, total, itemCount };
+  return { subtotal, tax, total, itemCount };
 }
 
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
@@ -204,8 +255,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   const now = new Date();
   const nowIso = now.toISOString();
   const discount = round2(input.discount ?? 0);
-  const tax = round2(input.tax ?? 0);
-  const { subtotal, total } = cartTotals(input.lines, discount, tax);
+  const { subtotal, tax, total } = cartTotals(input.lines, discount, input.vatRate ?? 0);
   const amountPaid = round2(input.amountPaid ?? total);
 
   const sale: Sale = {
@@ -259,6 +309,10 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
       for (const line of input.lines) {
         const product = await dbi.products.get(line.productId);
         if (!product) continue;
+        // Re-check against the stored level, not the quantity the cart was built with.
+        if (product.stockQty < line.quantity) {
+          throw new Error(`Only ${product.stockQty} of ${product.name} left in stock.`);
+        }
         await dbi.products.put({
           ...product,
           stockQty: product.stockQty - line.quantity,

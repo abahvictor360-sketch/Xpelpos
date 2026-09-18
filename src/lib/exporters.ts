@@ -1,9 +1,8 @@
 "use client";
 
 import type { SalesReport } from "./analytics";
+import { loadStoreProfile } from "./store-profile";
 import { formatDate, formatDateTime, formatMoney } from "./utils";
-
-const STORE_NAME = "Xpel Beauty NG";
 
 function fileStem(report: SalesReport): string {
   const from = report.from.toISOString().slice(0, 10);
@@ -41,11 +40,12 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 export async function exportExcel(report: SalesReport): Promise<void> {
+  const store = await loadStoreProfile();
   const XLSX = await import("xlsx");
   const workbook = XLSX.utils.book_new();
 
   const summarySheet = XLSX.utils.aoa_to_sheet([
-    [`${STORE_NAME} — Sales Report`],
+    [`${store.name} — Sales Report`],
     [],
     ...summaryPairs(report),
   ]);
@@ -93,6 +93,7 @@ export async function exportExcel(report: SalesReport): Promise<void> {
 }
 
 export async function exportPdf(report: SalesReport): Promise<void> {
+  const store = await loadStoreProfile();
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
 
@@ -101,7 +102,7 @@ export async function exportPdf(report: SalesReport): Promise<void> {
 
   doc.setFontSize(18);
   doc.setTextColor(...brand);
-  doc.text(`${STORE_NAME} — Sales Report`, 40, 44);
+  doc.text(`${store.name} — Sales Report`, 40, 44);
   doc.setFontSize(10);
   doc.setTextColor(90);
   doc.text(
@@ -156,6 +157,7 @@ export async function exportPdf(report: SalesReport): Promise<void> {
 }
 
 export async function exportDocx(report: SalesReport): Promise<void> {
+  const store = await loadStoreProfile();
   const {
     Document, Packer, Paragraph, HeadingLevel, Table, TableRow, TableCell,
     TextRun, WidthType, AlignmentType,
@@ -180,7 +182,7 @@ export async function exportDocx(report: SalesReport): Promise<void> {
       {
         children: [
           new Paragraph({
-            text: `${STORE_NAME} — Sales Report`,
+            text: `${store.name} — Sales Report`,
             heading: HeadingLevel.HEADING_1,
           }),
           new Paragraph({

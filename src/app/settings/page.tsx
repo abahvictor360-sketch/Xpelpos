@@ -9,6 +9,9 @@ import { seedSampleProducts } from "@/lib/seed";
 import { pendingSyncCount } from "@/lib/repository";
 import { formatDateTime } from "@/lib/utils";
 import InstallButton from "@/components/InstallButton";
+import { toast } from "@/components/Toaster";
+import Modal from "@/components/Modal";
+import { DEFAULT_PROFILE, loadStoreProfile, saveStoreProfile, type StoreProfile } from "@/lib/store-profile";
 
 export default function SettingsPage() {
   const [cashier, setCashier] = useState("");
@@ -21,6 +24,8 @@ export default function SettingsPage() {
   const [lastSync, setLastSync] = useState("");
   const [pending, setPending] = useState(0);
   const [busy, setBusy] = useState("");
+  const [profile, setProfile] = useState<StoreProfile>(DEFAULT_PROFILE);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const refresh = async () => {
     setLastSync(await getLastSyncAt());
@@ -29,6 +34,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then(setCashier);
+    void loadStoreProfile().then(setProfile);
     void refresh();
     const supabase = getSupabase();
     if (!supabase) return;
@@ -42,8 +48,21 @@ export default function SettingsPage() {
   const saveCashier = async () => {
     await setSetting("cashier_name", cashier.trim() || "Counter");
     setSaved(true);
+    toast("Cashier name saved.", "success");
     window.setTimeout(() => setSaved(false), 2000);
   };
+
+  const saveProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await saveStoreProfile(profile);
+    toast("Store details saved — receipts and reports updated.", "success");
+  };
+
+  const setField = (key: keyof StoreProfile) => (event: React.ChangeEvent<HTMLInputElement>) =>
+    setProfile((current) => ({
+      ...current,
+      [key]: key === "vatRate" ? Number(event.target.value) || 0 : event.target.value,
+    }));
 
   const signIn = async (mode: "in" | "up") => {
     const supabase = getSupabase();
@@ -82,7 +101,7 @@ export default function SettingsPage() {
   };
 
   const clearLocal = async () => {
-    if (!confirm("Delete ALL local data on this device? Anything not yet synced will be lost.")) return;
+    setConfirmClear(false);
     const dbi = getDb();
     await Promise.all([
       dbi.products.clear(),
@@ -90,7 +109,7 @@ export default function SettingsPage() {
       dbi.saleItems.clear(),
       dbi.stockMovements.clear(),
     ]);
-    setSyncMessage("Local data cleared.");
+    toast("Local data cleared on this device.", "success");
     void refresh();
   };
 
@@ -183,6 +202,49 @@ export default function SettingsPage() {
       </section>
 
       <section className="card p-4">
+        <h2 className="text-sm font-bold text-ink-900">Store details</h2>
+        <p className="mt-1 text-xs text-ink-700/55">Printed on every receipt and used as the report heading.</p>
+        <form onSubmit={saveProfile} className="mt-3 space-y-3">
+          <label className="block">
+            <span className="label">Business name</span>
+            <input value={profile.name} onChange={setField("name")} className="input" placeholder="Xpel Beauty NG" />
+          </label>
+          <label className="block">
+            <span className="label">Address</span>
+            <input value={profile.address} onChange={setField("address")} className="input" placeholder="Shop address" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="label">Phone</span>
+              <input value={profile.phone} onChange={setField("phone")} className="input" placeholder="0800 000 0000" />
+            </label>
+            <label className="block">
+              <span className="label">VAT rate (%)</span>
+              <input
+                value={profile.vatRate}
+                onChange={setField("vatRate")}
+                className="input tabular"
+                inputMode="decimal"
+                placeholder="0"
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="label">Receipt footer</span>
+            <input
+              value={profile.receiptFooter}
+              onChange={setField("receiptFooter")}
+              className="input"
+              placeholder="Thank you for shopping with us"
+            />
+          </label>
+          <button type="submit" className="btn-dark">
+            Save store details
+          </button>
+        </form>
+      </section>
+
+      <section className="card p-4">
         <h2 className="flex items-center gap-2 text-sm font-bold text-ink-900">
           <Smartphone size={15} /> Install on this device
         </h2>
@@ -211,11 +273,37 @@ export default function SettingsPage() {
           <button onClick={loadSamples} disabled={busy === "seed"} className="btn-ghost">
             <Download size={16} /> Load sample products
           </button>
-          <button onClick={clearLocal} className="btn-ghost text-brand-700">
+          <button onClick={() => setConfirmClear(true)} className="btn-ghost text-brand-700">
             <Trash2 size={16} /> Clear local data
           </button>
         </div>
       </section>
+
+      {confirmClear && (
+        <Modal
+          title="Clear local data?"
+          onClose={() => setConfirmClear(false)}
+          size="sm"
+          footer={
+            <>
+              <button onClick={() => setConfirmClear(false)} className="btn-ghost flex-1">
+                Cancel
+              </button>
+              <button
+                onClick={() => void clearLocal()}
+                className="btn flex-1 bg-brand-600 text-white hover:bg-brand-700"
+              >
+                Clear everything
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-ink-700/75">
+            Every product, sale and stock movement stored on <strong className="text-ink-900">this device</strong> is
+            deleted. {pending > 0 ? `${pending} record(s) have not been uploaded yet and will be lost.` : "Synced records stay safe in the cloud and download again on the next sync."}
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

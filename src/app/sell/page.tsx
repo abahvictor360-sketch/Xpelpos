@@ -7,6 +7,8 @@ import ProductSearch from "@/components/ProductSearch";
 import Receipt from "@/components/Receipt";
 import { cartTotals, checkout } from "@/lib/repository";
 import { getSetting } from "@/lib/db";
+import { useStoreProfile } from "@/lib/store-profile";
+import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
 import type { CartLine, PaymentMethod, Product, Sale, SaleItem } from "@/lib/types";
 import { cx, formatMoney } from "@/lib/utils";
@@ -27,13 +29,33 @@ export default function SellPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
+  const store = useStoreProfile();
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((value) => setCashierName(value || "Counter"));
   }, []);
 
+  // Till shortcuts: F2 jumps to the search box, F9 closes the sale.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "F2") {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('input[aria-label="Search products"]')?.focus();
+      }
+      if (event.key === "F9") {
+        event.preventDefault();
+        void completeSale();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const discountValue = Math.max(0, Number(discount) || 0);
-  const totals = useMemo(() => cartTotals(lines, discountValue), [lines, discountValue]);
+  const totals = useMemo(
+    () => cartTotals(lines, discountValue, store.vatRate),
+    [lines, discountValue, store.vatRate],
+  );
   const paid = amountPaid === "" ? totals.total : Number(amountPaid) || 0;
   const change = Math.max(0, paid - totals.total);
 
@@ -105,12 +127,14 @@ export default function SellPage() {
         lines,
         paymentMethod: method,
         discount: discountValue,
+        vatRate: store.vatRate,
         amountPaid: paid,
         customerName,
         cashierName,
       });
       setReceipt(result);
       clearCart();
+      toast(`Sale ${result.sale.receiptNo} recorded.`, "success");
       void syncNow();
     } catch (saleError) {
       setError(saleError instanceof Error ? saleError.message : "Could not complete the sale.");
@@ -211,6 +235,12 @@ export default function SellPage() {
             <dt>Discount</dt>
             <dd className="tabular font-medium">- {formatMoney(discountValue)}</dd>
           </div>
+          {store.vatRate > 0 && (
+            <div className="flex justify-between text-ink-700/75">
+              <dt>VAT ({store.vatRate}%)</dt>
+              <dd className="tabular font-medium">{formatMoney(totals.tax)}</dd>
+            </div>
+          )}
           <div className="flex items-center justify-between border-t border-black/5 pt-2 text-lg font-extrabold text-ink-900">
             <dt>Total</dt>
             <dd className="tabular">{formatMoney(totals.total)}</dd>
@@ -295,6 +325,7 @@ export default function SellPage() {
         </button>
         <p className="mt-2 text-center text-[11px] text-ink-700/50">
           Saved on this device instantly, synced to the cloud automatically.
+          <span className="mt-0.5 block">Shortcuts: F2 search · F9 complete sale</span>
         </p>
       </section>
 

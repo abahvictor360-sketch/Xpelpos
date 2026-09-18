@@ -1,10 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { AlertTriangle, Download, PackagePlus, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Archive, Download, PackagePlus, Pencil, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
-import { archiveProduct, createProduct, restockProduct, updateProduct } from "@/lib/repository";
+import {
+  archiveProduct,
+  createProduct,
+  deleteProductPermanently,
+  productSaleCount,
+  restockProduct,
+  restoreProduct,
+  updateProduct,
+} from "@/lib/repository";
+import Modal from "@/components/Modal";
+import { toast } from "@/components/Toaster";
 import { exportCsvInventory } from "@/lib/exporters";
 import type { Product } from "@/lib/types";
 import { cx, formatMoney, formatNumber } from "@/lib/utils";
@@ -22,19 +32,26 @@ const EMPTY = {
 };
 
 export default function InventoryPage() {
-  const products = useLiveQuery(
-    () => db.products.filter((p) => !p.deletedAt).toArray(),
-    [],
-    [] as Product[],
-  );
+  const allProducts = useLiveQuery(() => db.products.toArray(), [], [] as Product[]);
   const [term, setTerm] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [restockFor, setRestockFor] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState<Product | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const products = useMemo(
+    () => (allProducts ?? []).filter((product) => !product.deletedAt),
+    [allProducts],
+  );
+  const archived = useMemo(
+    () => (allProducts ?? []).filter((product) => product.deletedAt),
+    [allProducts],
+  );
 
   const list = useMemo(() => {
     const query = term.trim().toLowerCase();
-    const rows = (products ?? []).filter((product) =>
+    const rows = (showArchived ? archived : products).filter((product) =>
       !query
         ? true
         : [product.name, product.sku, product.category, product.brand]
@@ -43,10 +60,10 @@ export default function InventoryPage() {
             .includes(query),
     );
     return rows.sort((a, b) => a.name.localeCompare(b.name));
-  }, [products, term]);
+  }, [products, archived, showArchived, term]);
 
   const stats = useMemo(() => {
-    const rows = products ?? [];
+    const rows = products;
     return {
       count: rows.length,
       units: rows.reduce((sum, p) => sum + p.stockQty, 0),
@@ -81,6 +98,13 @@ export default function InventoryPage() {
             />
           </div>
           <button
+            onClick={() => setShowArchived((value) => !value)}
+            className={cx("btn-ghost", showArchived && "border-brand-500/40 bg-brand-50 text-brand-700")}
+          >
+            <Archive size={16} />
+            {showArchived ? `Active (${products.length})` : `Archived (${archived.length})`}
+          </button>
+          <button
             onClick={() => void exportCsvInventory(list)}
             className="btn-ghost"
             disabled={list.length === 0}
@@ -100,7 +124,11 @@ export default function InventoryPage() {
 
         {list.length === 0 ? (
           <p className="px-4 py-14 text-center text-sm text-ink-700/55">
-            No products yet — add your first Xpel product to start selling.
+            {showArchived
+              ? "Nothing is archived."
+              : term
+                ? `No product matches “${term}”.`
+                : "No products yet — add your first Xpel product to start selling."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -119,6 +147,7 @@ export default function InventoryPage() {
                 {list.map((product) => {
                   const out = product.stockQty <= 0;
                   const low = !out && product.stockQty <= product.lowStockThreshold;
+                  const isArchived = Boolean(product.deletedAt);
                   return (
                     <tr key={product.id} className="hover:bg-black/[0.015]">
                       <td className="px-4 py-3">
@@ -132,40 +161,48 @@ export default function InventoryPage() {
                         <span
                           className={cx(
                             "chip",
-                            out
-                              ? "bg-brand-50 text-brand-700"
-                              : low
-                                ? "bg-[#fdf3e0] text-brand-700"
-                                : "bg-olive-100 text-olive-900",
+                            isArchived
+                              ? "bg-black/5 text-ink-700/70"
+                              : out
+                                ? "bg-brand-50 text-brand-700"
+                                : low
+                                  ? "bg-[#fdf3e0] text-brand-700"
+                                  : "bg-olive-100 text-olive-900",
                           )}
                         >
-                          {(out || low) && <AlertTriangle size={12} />}
-                          {out ? "Out of stock" : low ? "Low stock" : "In stock"}
+                          {!isArchived && (out || low) && <AlertTriangle size={12} />}
+                          {isArchived ? "Archived" : out ? "Out of stock" : low ? "Low stock" : "In stock"}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
-                          <IconButton label="Restock" onClick={() => setRestockFor(product)}>
-                            <PackagePlus size={16} />
-                          </IconButton>
-                          <IconButton
-                            label="Edit"
-                            onClick={() => {
-                              setEditing(product);
-                              setShowForm(true);
-                            }}
-                          >
-                            <Pencil size={16} />
-                          </IconButton>
-                          <IconButton
-                            label="Remove"
-                            danger
-                            onClick={() => {
-                              if (confirm(`Remove ${product.name} from the catalogue?`)) {
-                                void archiveProduct(product.id);
-                              }
-                            }}
-                          >
+                          {showArchived ? (
+                            <IconButton
+                              label="Restore"
+                              onClick={async () => {
+                                await restoreProduct(product.id);
+                                toast(`${product.name} restored.`, "success");
+                              }}
+                            >
+                              <RotateCcw size={16} />
+                            </IconButton>
+                          ) : (
+                            <>
+                              <IconButton label="Restock" onClick={() => setRestockFor(product)}>
+                                <PackagePlus size={16} />
+                              </IconButton>
+                              <IconButton
+                                label="Edit"
+                                onClick={() => {
+                                  setEditing(product);
+                                  setShowForm(true);
+                                }}
+                              >
+                                <Pencil size={16} />
+                              </IconButton>
+                            </>
+                          )}
+                          <IconButton label="Delete" danger onClick={() => setDeleting(product)}>
                             <Trash2 size={16} />
                           </IconButton>
                         </div>
@@ -190,6 +227,8 @@ export default function InventoryPage() {
       )}
 
       {restockFor && <RestockDialog product={restockFor} onClose={() => setRestockFor(null)} />}
+
+      {deleting && <DeleteDialog product={deleting} onClose={() => setDeleting(null)} />}
     </div>
   );
 }
@@ -367,6 +406,69 @@ function RestockDialog({ product, onClose }: { product: Product; onClose: () => 
   );
 }
 
+function DeleteDialog({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [saleCount, setSaleCount] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void productSaleCount(product.id).then(setSaleCount);
+  }, [product.id]);
+
+  const sold = (saleCount ?? 0) > 0;
+
+  const archive = async () => {
+    setBusy(true);
+    await archiveProduct(product.id);
+    toast(`${product.name} archived — it stays on past receipts.`, "success");
+    setBusy(false);
+    onClose();
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    const result = await deleteProductPermanently(product.id);
+    toast(
+      result.deleted ? `${product.name} deleted.` : result.reason ?? "Archived instead.",
+      result.deleted ? "success" : "info",
+    );
+    setBusy(false);
+    onClose();
+  };
+
+  return (
+    <Modal title={`Remove ${product.name}?`} onClose={onClose} size="sm">
+      <div className="space-y-3 text-sm text-ink-700/75">
+        {saleCount === null ? (
+          <p>Checking sales history…</p>
+        ) : sold ? (
+          <p>
+            This product appears on{" "}
+            <strong className="text-ink-900">{saleCount} past sale line{saleCount === 1 ? "" : "s"}</strong>, so it can
+            only be archived. Archiving hides it from the till and reports keep working.
+          </p>
+        ) : (
+          <p>
+            It has never been sold, so you can delete it outright — or archive it to keep it out of the till without
+            losing the record.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 flex flex-col gap-2">
+        <button onClick={archive} disabled={busy} className="btn-ghost w-full">
+          <Archive size={16} /> Archive (recommended)
+        </button>
+        <button onClick={remove} disabled={busy || sold} className="btn w-full bg-brand-600 text-white hover:bg-brand-700">
+          <Trash2 size={16} /> Delete permanently
+        </button>
+        <button onClick={onClose} disabled={busy} className="btn w-full text-ink-700/70 hover:bg-black/5">
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function Dialog({
   title,
   children,
@@ -377,17 +479,9 @@ function Dialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/50 p-0 sm:items-center sm:p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-auto rounded-t-2xl bg-white p-5 shadow-card sm:rounded-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-bold text-ink-900">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-black/5">
-            <X size={18} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal title={title} onClose={onClose}>
+      {children}
+    </Modal>
   );
 }
 

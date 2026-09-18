@@ -1,5 +1,5 @@
 // Xpel POS service worker — app shell caching so the till keeps working offline.
-const CACHE = "xpel-pos-v2";
+const CACHE = "xpel-pos-v3";
 const APP_SHELL = [
   "/",
   "/sell",
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "/sales",
   "/analytics",
   "/settings",
+  "/install",
   "/manifest.webmanifest",
   "/logo.png",
   "/icons/icon-192.png",

@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileSpreadsheet, FileText, FileType2, Loader2 } from "lucide-react";
+import { Ban, Eye, FileSpreadsheet, FileText, FileType2, Loader2 } from "lucide-react";
 import { useReport } from "@/lib/useReport";
 import { exportDocx, exportExcel, exportPdf } from "@/lib/exporters";
 import { voidSale } from "@/lib/repository";
 import { db } from "@/lib/db";
-import type { PaymentMethod } from "@/lib/types";
+import Modal from "@/components/Modal";
+import Receipt from "@/components/Receipt";
+import { toast } from "@/components/Toaster";
+import type { PaymentMethod, Sale, SaleItem } from "@/lib/types";
 import {
   addDays,
   cx,
@@ -51,6 +54,8 @@ export default function SalesPage() {
   const [customTo, setCustomTo] = useState(toDateInput(today));
   const [method, setMethod] = useState<PaymentMethod | "all">("all");
   const [exporting, setExporting] = useState<string>("");
+  const [viewing, setViewing] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
+  const [voiding, setVoiding] = useState<Sale | null>(null);
 
   const range = useMemo(
     () => resolveRange(rangeKey, customFrom, customTo),
@@ -77,12 +82,23 @@ export default function SalesPage() {
     }
   };
 
-  const handleVoid = async (receiptNo: string) => {
+  const openReceipt = async (receiptNo: string) => {
     const sale = await db.sales.where("receiptNo").equals(receiptNo).first();
     if (!sale) return;
-    if (confirm(`Void ${receiptNo}? The items go back into stock.`)) {
-      await voidSale(sale.id);
-    }
+    const items = await db.saleItems.where("saleId").equals(sale.id).toArray();
+    setViewing({ sale, items });
+  };
+
+  const askVoid = async (receiptNo: string) => {
+    const sale = await db.sales.where("receiptNo").equals(receiptNo).first();
+    if (sale) setVoiding(sale);
+  };
+
+  const confirmVoid = async () => {
+    if (!voiding) return;
+    await voidSale(voiding.id);
+    toast(`${voiding.receiptNo} voided — stock returned.`, "success");
+    setVoiding(null);
   };
 
   return (
@@ -195,7 +211,7 @@ export default function SalesPage() {
                   <th className="px-4 py-2.5 text-right font-medium">Qty</th>
                   <th className="px-4 py-2.5 font-medium">Payment</th>
                   <th className="px-4 py-2.5 text-right font-medium">Total</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Status</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
@@ -209,17 +225,30 @@ export default function SalesPage() {
                     <td className="tabular px-4 py-3 text-right">{row.itemCount}</td>
                     <td className="px-4 py-3 capitalize text-ink-700/70">{row.paymentMethod}</td>
                     <td className="tabular px-4 py-3 text-right font-semibold">{formatMoney(row.total)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {row.status === "completed" ? (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {row.status !== "completed" && (
+                          <span className="chip bg-black/5 capitalize text-ink-700/70">{row.status}</span>
+                        )}
                         <button
-                          onClick={() => void handleVoid(row.receiptNo)}
-                          className="text-xs font-medium text-brand-700 hover:underline"
+                          onClick={() => void openReceipt(row.receiptNo)}
+                          title="View / reprint receipt"
+                          aria-label={`View receipt ${row.receiptNo}`}
+                          className="grid h-8 w-8 place-items-center rounded-lg text-ink-700/55 hover:bg-black/5"
                         >
-                          Void
+                          <Eye size={16} />
                         </button>
-                      ) : (
-                        <span className="chip bg-black/5 capitalize text-ink-700/70">{row.status}</span>
-                      )}
+                        {row.status === "completed" && (
+                          <button
+                            onClick={() => void askVoid(row.receiptNo)}
+                            title="Void this sale"
+                            aria-label={`Void ${row.receiptNo}`}
+                            className="grid h-8 w-8 place-items-center rounded-lg text-ink-700/55 hover:bg-brand-50 hover:text-brand-700"
+                          >
+                            <Ban size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -228,6 +257,42 @@ export default function SalesPage() {
           </div>
         )}
       </div>
+
+      {viewing && (
+        <Receipt
+          sale={viewing.sale}
+          items={viewing.items}
+          onClose={() => setViewing(null)}
+          title={`Receipt ${viewing.sale.receiptNo}`}
+          actionLabel="Done"
+        />
+      )}
+
+      {voiding && (
+        <Modal
+          title={`Void ${voiding.receiptNo}?`}
+          onClose={() => setVoiding(null)}
+          size="sm"
+          footer={
+            <>
+              <button onClick={() => setVoiding(null)} className="btn-ghost flex-1">
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmVoid()}
+                className="btn flex-1 bg-brand-600 text-white hover:bg-brand-700"
+              >
+                Void sale
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-ink-700/75">
+            The {formatMoney(voiding.total)} sale is marked void and every item on it goes back into stock. Reports stop
+            counting it, but the record stays for your audit trail.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

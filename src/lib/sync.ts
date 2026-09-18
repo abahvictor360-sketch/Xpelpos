@@ -261,3 +261,27 @@ export async function syncNow(): Promise<SyncReport> {
 export async function getLastSyncAt(): Promise<string> {
   return getSetting("last_sync_at");
 }
+
+/** Removes a product row from the cloud. Used by a permanent delete. */
+export async function deleteRemoteProduct(id: string): Promise<{ ok: boolean; reason?: string }> {
+  if (!isSupabaseConfigured()) return { ok: true };
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: true };
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return { ok: false, reason: "You are offline, so it was archived instead — delete again once online." };
+  }
+
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) {
+    // Nothing was ever uploaded from an unauthenticated device, so a local wipe is safe.
+    const lastSync = await getSetting("last_sync_at");
+    return lastSync
+      ? { ok: false, reason: "Sign in on Settings to delete from the cloud — it was archived instead." }
+      : { ok: true };
+  }
+
+  const { error } = await supabase.from("pos_products").delete().eq("id", id);
+  return error ? { ok: false, reason: `${error.message} — archived instead.` } : { ok: true };
+}
