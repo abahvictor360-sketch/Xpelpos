@@ -38,10 +38,15 @@ Open **Settings → Load sample products** to try it with a demo catalogue.
 
 ## Installing on a device
 
+Open the deployed URL and use the **Install app** button in the header (or on the
+Settings page). It replays the browser's own install prompt; where the browser has no
+such prompt it shows the manual steps for that platform.
+
 | Platform | How |
 | --- | --- |
-| Windows PC | Open the deployed URL in Edge or Chrome → install icon in the address bar (or menu → Apps → *Install this site as an app*). |
-| Android | Open the URL in Chrome → ⋮ menu → *Add to Home screen* / *Install app*. |
+| Windows PC | Edge or Chrome → **Install app** button, or the install icon in the address bar (menu → Apps → *Install this site as an app*). |
+| Android | Chrome → **Install app** button, or ⋮ menu → *Add to Home screen*. |
+| iPhone / iPad | Safari → Share → *Add to Home Screen* (iOS has no install prompt API). |
 
 Once installed the app launches full screen, keeps its local database, and works with no
 internet connection. Sales made offline upload the next time the device is online.

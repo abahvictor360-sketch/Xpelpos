@@ -1,6 +1,17 @@
 // Xpel POS service worker — app shell caching so the till keeps working offline.
-const CACHE = "xpel-pos-v1";
-const APP_SHELL = ["/", "/sell", "/inventory", "/sales", "/analytics", "/settings", "/manifest.webmanifest", "/logo.png"];
+const CACHE = "xpel-pos-v2";
+const APP_SHELL = [
+  "/",
+  "/sell",
+  "/inventory",
+  "/sales",
+  "/analytics",
+  "/settings",
+  "/manifest.webmanifest",
+  "/logo.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import SyncBadge from "./SyncBadge";
+import InstallButton from "./InstallButton";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -36,9 +37,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    const register = () => navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    if (document.readyState === "complete") register();
+
+    let reloading = false;
+    const onControllerChange = () => {
+      // A new service worker took over — reload once so the UI matches the cache.
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+
+    const register = () =>
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => registration.update().catch(() => undefined))
+        .catch(() => undefined);
+
+    if (document.readyState === "complete") void register();
     else window.addEventListener("load", register, { once: true });
+
+    return () => navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
   }, []);
 
   return (
@@ -112,6 +130,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               "Xpel POS"}
           </h1>
           <div className="ml-auto flex items-center gap-2">
+            <InstallButton />
             <SyncBadge />
             <Link href="/sell" className="btn-primary hidden sm:inline-flex">
               <ShoppingCart size={16} /> New sale

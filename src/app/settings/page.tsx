@@ -8,6 +8,7 @@ import { getLastSyncAt, syncNow } from "@/lib/sync";
 import { seedSampleProducts } from "@/lib/seed";
 import { pendingSyncCount } from "@/lib/repository";
 import { formatDateTime } from "@/lib/utils";
+import InstallButton from "@/components/InstallButton";
 
 export default function SettingsPage() {
   const [cashier, setCashier] = useState("");
@@ -196,6 +197,9 @@ export default function SettingsPage() {
           </li>
           <li>Once installed it opens in its own window and keeps working without internet.</li>
         </ul>
+        <div className="mt-3">
+          <InstallButton variant="block" />
+        </div>
       </section>
 
       <section className="card p-4">
