@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #fcfcfb;
+  --chart-cash: #cf6d1e;
+  --chart-transfer: #1273c6;
+  --chart-card: #8a9500;
+}
+
+html,
+body {
+  background: #f4f4f1;
+  color: #1f1e19;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-black/5 bg-white shadow-card;
+  }
+  .input {
+    @apply w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition
+           placeholder:text-ink-700/40 focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-700/60;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-500 text-white hover:bg-brand-600;
+  }
+  .btn-dark {
+    @apply btn bg-ink-800 text-white hover:bg-ink-900;
+  }
+  .btn-ghost {
+    @apply btn border border-black/10 bg-white text-ink-800 hover:bg-black/5;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+}
+
+/* Keep numeric columns legible when they update in place. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 30, 25, 0.18);
+  border-radius: 999px;
+}
