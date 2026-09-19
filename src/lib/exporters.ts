@@ -95,10 +95,15 @@ export async function exportPdf(report: SalesReport): Promise<void> {
   doc.text(store.name.toUpperCase(), margin + 70, 46);
 
   doc.setFont(REPORT_FONT_NAME, "normal");
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   const contact = [store.address, store.phone].filter(Boolean).join("  ·  ");
-  if (contact) doc.text(contact, margin + 70, 62);
-  doc.text("Sales Report", margin + 70, contact ? 76 : 62);
+  // Keep the contact block clear of the period text on the right.
+  const contactLines = contact
+    ? (doc.splitTextToSize(contact, pageWidth - margin * 2 - 70 - 210) as string[]).slice(0, 2)
+    : [];
+  contactLines.forEach((line, index) => doc.text(line, margin + 70, 62 + index * 12));
+  doc.setFontSize(9.5);
+  doc.text("Sales Report", margin + 70, 62 + contactLines.length * 12);
 
   doc.setFontSize(9);
   doc.text(periodLabel(report), pageWidth - margin, 46, { align: "right" });

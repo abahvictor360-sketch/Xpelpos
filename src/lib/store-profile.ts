@@ -13,7 +13,8 @@ export interface StoreProfile {
 
 export const DEFAULT_PROFILE: StoreProfile = {
   name: "Xpel Beauty NG",
-  address: "",
+  address:
+    "Zeal Plaza, Adjacent First Bank BBA, Beside Anambra Clusters, Trade Fair International Market, Lagos",
   phone: "",
   vatRate: 0,
   receiptFooter: "Thank you for shopping with Xpel Beauty NG",
