@@ -23,7 +23,11 @@ synced to Supabase in the background, so the till keeps working when the network
   history stays intact), restore archived products, low-stock and out-of-stock alerts,
   stock value, inventory export.
 - **Sales & reports** — filter by date range and payment method, void a sale (stock goes
-  back), and export to **Excel (.xlsx), PDF (.pdf) and Word (.docx)**.
+  back), and export to **Excel (.xlsx), PDF (.pdf) and Word (.docx)**. Every export is
+  branded: the Xpel logo and your store details head the document, headline figures sit in
+  cards, tables are styled with zebra rows and right-aligned money, and each page carries a
+  footer with the logo and page numbers. The Excel file ships a summary sheet plus filtered,
+  frozen-header tables with real numbers in ₦ format, so totals can be re-cut in Excel.
 - **Analytics** — revenue trend, gross profit, average basket, best-selling products and
   payment-method split for 7 / 30 / 90 days.
 - **Product import** — bring a whole catalogue in from Excel or CSV. Column names are matched
