@@ -1,13 +1,12 @@
 "use client";
 
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   Cell,
   Pie,
   PieChart,
+  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,7 +14,7 @@ import {
 } from "recharts";
 import type { ProductPerformance, SeriesPoint } from "@/lib/analytics";
 import type { PaymentMethod } from "@/lib/types";
-import { formatMoney, formatNumber } from "@/lib/utils";
+import { cx, formatMoney, formatNumber } from "@/lib/utils";
 
 /** Validated categorical palette (light surface) — cash / transfer / card. */
 export const PAYMENT_COLORS: Record<PaymentMethod, string> = {
@@ -26,13 +25,14 @@ export const PAYMENT_COLORS: Record<PaymentMethod, string> = {
 
 const AXIS = { fontSize: 11, fill: "#1f1e1999" } as const;
 
+/** Dark pill tooltip, as in the reference dashboards. */
 function TooltipCard({ title, rows }: { title: string; rows: Array<[string, string]> }) {
   return (
-    <div className="rounded-xl border border-black/5 bg-white px-3 py-2 shadow-card">
-      <p className="text-xs font-semibold text-ink-900">{title}</p>
+    <div className="rounded-2xl bg-ink-900 px-3 py-2 shadow-pop">
+      <p className="text-[11px] font-semibold text-white/60">{title}</p>
       {rows.map(([label, value]) => (
-        <p key={label} className="tabular text-xs text-ink-700/70">
-          {label}: <span className="font-medium text-ink-900">{value}</span>
+        <p key={label} className="tabular text-xs text-white">
+          <span className="text-white/60">{label}:</span> <span className="font-semibold">{value}</span>
         </p>
       ))}
     </div>
@@ -40,25 +40,22 @@ function TooltipCard({ title, rows }: { title: string; rows: Array<[string, stri
 }
 
 export function RevenueChart({ data }: { data: SeriesPoint[] }) {
+  const peak = Math.max(...data.map((point) => point.revenue), 0);
+
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#cf6d1e" stopOpacity={0.28} />
-            <stop offset="100%" stopColor="#cf6d1e" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
+      <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="28%">
+        <CartesianGrid vertical={false} stroke="#1f1e190d" />
         <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} interval="preserveStartEnd" />
         <YAxis
           tick={AXIS}
           tickLine={false}
           axisLine={false}
-          width={64}
+          width={56}
           tickFormatter={(value: number) => (value >= 1000 ? `${Math.round(value / 1000)}k` : String(value))}
         />
         <Tooltip
-          cursor={{ stroke: "#1f1e1933", strokeWidth: 1 }}
+          cursor={{ fill: "#1f1e1908" }}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -71,16 +68,16 @@ export function RevenueChart({ data }: { data: SeriesPoint[] }) {
             ) : null
           }
         />
-        <Area
-          type="monotone"
-          dataKey="revenue"
-          stroke="#cf6d1e"
-          strokeWidth={2}
-          fill="url(#revenueFill)"
-          dot={false}
-          activeDot={{ r: 4, strokeWidth: 2, stroke: "#ffffff" }}
-        />
-      </AreaChart>
+        <Bar dataKey="revenue" radius={[8, 8, 8, 8]} maxBarSize={26}>
+          {data.map((point) => (
+            <Cell
+              key={point.label}
+              // The best day of the period reads solid; the rest sit back a shade.
+              fill={peak > 0 && point.revenue === peak ? "#cf6d1e" : "#f0c9a6"}
+            />
+          ))}
+        </Bar>
+      </BarChart>
     </ResponsiveContainer>
   );
 }
@@ -102,11 +99,12 @@ export function PaymentSplit({
               data={hasData ? data : [{ method: "cash", total: 1, count: 0 }]}
               dataKey="total"
               nameKey="method"
-              innerRadius={58}
-              outerRadius={86}
-              paddingAngle={2}
+              innerRadius={56}
+              outerRadius={88}
+              paddingAngle={3}
+              cornerRadius={8}
               stroke="#ffffff"
-              strokeWidth={2}
+              strokeWidth={3}
             >
               {(hasData ? data : [{ method: "cash" as PaymentMethod }]).map((entry) => (
                 <Cell
@@ -147,7 +145,12 @@ export function PaymentSplit({
             />
             <span className="capitalize text-ink-700/80">{entry.method}</span>
             <span className="tabular ml-auto font-semibold text-ink-900">{formatMoney(entry.total)}</span>
-            <span className="tabular w-12 text-right text-xs text-ink-700/50">
+            <span
+              className={cx(
+                "chip w-12 justify-center px-1.5 py-0.5 text-[11px] font-semibold",
+                entry.total > 0 ? "bg-olive-100 text-olive-900" : "bg-black/5 text-ink-700/50",
+              )}
+            >
               {total ? Math.round((entry.total / total) * 100) : 0}%
             </span>
           </li>
@@ -187,7 +190,7 @@ export function TopProductsChart({ data }: { data: ProductPerformance[] }) {
             ) : null
           }
         />
-        <Bar dataKey="revenue" fill="#cf6d1e" radius={[4, 4, 4, 4]} barSize={14} />
+        <Bar dataKey="revenue" fill="#cf6d1e" radius={[8, 8, 8, 8]} barSize={16} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -2,7 +2,7 @@
 
 import { getDb, getSetting, setSetting } from "./db";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
-import type { Product, Sale, SaleItem, StockMovement } from "./types";
+import type { Coupon, Customer, Product, Sale, SaleItem, Shift, StockMovement } from "./types";
 
 const LAST_PULL_KEY = "last_pull_at";
 const CHUNK = 200;
@@ -73,6 +73,9 @@ const toRemoteSale = (s: Sale) => ({
   cashier_id: s.cashierId,
   cashier_name: s.cashierName || null,
   device_id: s.deviceId,
+  coupon_code: s.couponCode || null,
+  customer_id: s.customerId,
+  shift_id: s.shiftId,
   status: s.status,
   created_at: s.createdAt,
   updated_at: s.updatedAt,
@@ -95,6 +98,9 @@ const fromRemoteSale = (row: Record<string, any>): Sale => ({
   cashierId: row.cashier_id ?? null,
   cashierName: row.cashier_name ?? "",
   deviceId: row.device_id ?? "",
+  couponCode: row.coupon_code ?? "",
+  customerId: row.customer_id ?? null,
+  shiftId: row.shift_id ?? null,
   status: row.status ?? "completed",
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -136,6 +142,107 @@ const toRemoteMovement = (m: StockMovement) => ({
   reference_id: m.referenceId,
   note: m.note || null,
   created_at: m.createdAt,
+});
+
+const toRemoteCoupon = (c: Coupon) => ({
+  id: c.id,
+  code: c.code,
+  description: c.description || null,
+  discount_type: c.discountType,
+  discount_value: c.discountValue,
+  min_spend: c.minSpend,
+  max_discount: c.maxDiscount,
+  starts_at: c.startsAt,
+  ends_at: c.endsAt,
+  usage_limit: c.usageLimit,
+  used_count: c.usedCount,
+  is_active: c.isActive,
+  created_at: c.createdAt,
+  updated_at: c.updatedAt,
+  deleted_at: c.deletedAt,
+});
+
+const fromRemoteCoupon = (row: Record<string, any>): Coupon => ({
+  id: row.id,
+  code: row.code,
+  description: row.description ?? "",
+  discountType: row.discount_type,
+  discountValue: Number(row.discount_value ?? 0),
+  minSpend: Number(row.min_spend ?? 0),
+  maxDiscount: Number(row.max_discount ?? 0),
+  startsAt: row.starts_at ?? null,
+  endsAt: row.ends_at ?? null,
+  usageLimit: Number(row.usage_limit ?? 0),
+  usedCount: Number(row.used_count ?? 0),
+  isActive: Boolean(row.is_active),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  deletedAt: row.deleted_at ?? null,
+  syncState: "synced",
+});
+
+const toRemoteCustomer = (c: Customer) => ({
+  id: c.id,
+  name: c.name,
+  phone: c.phone || null,
+  email: c.email || null,
+  note: c.note || null,
+  created_at: c.createdAt,
+  updated_at: c.updatedAt,
+  deleted_at: c.deletedAt,
+});
+
+const fromRemoteCustomer = (row: Record<string, any>): Customer => ({
+  id: row.id,
+  name: row.name,
+  phone: row.phone ?? "",
+  email: row.email ?? "",
+  note: row.note ?? "",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  deletedAt: row.deleted_at ?? null,
+  syncState: "synced",
+});
+
+const toRemoteShift = (s: Shift) => ({
+  id: s.id,
+  cashier_name: s.cashierName || null,
+  device_id: s.deviceId,
+  opened_at: s.openedAt,
+  closed_at: s.closedAt,
+  opening_float: s.openingFloat,
+  counted_cash: s.countedCash,
+  expected_cash: s.expectedCash,
+  variance: s.variance,
+  cash_total: s.cashTotal,
+  transfer_total: s.transferTotal,
+  card_total: s.cardTotal,
+  sales_count: s.salesCount,
+  note: s.note || null,
+  status: s.status,
+  created_at: s.createdAt,
+  updated_at: s.updatedAt,
+});
+
+const fromRemoteShift = (row: Record<string, any>): Shift => ({
+  id: row.id,
+  cashierName: row.cashier_name ?? "",
+  deviceId: row.device_id ?? "",
+  openedAt: row.opened_at,
+  closedAt: row.closed_at ?? null,
+  openingFloat: Number(row.opening_float ?? 0),
+  countedCash: Number(row.counted_cash ?? 0),
+  expectedCash: Number(row.expected_cash ?? 0),
+  variance: Number(row.variance ?? 0),
+  cashTotal: Number(row.cash_total ?? 0),
+  transferTotal: Number(row.transfer_total ?? 0),
+  cardTotal: Number(row.card_total ?? 0),
+  salesCount: Number(row.sales_count ?? 0),
+  note: row.note ?? "",
+  status: row.status ?? "open",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  syncState: "synced",
 });
 
 let inFlight: Promise<SyncReport> | null = null;
@@ -186,6 +293,30 @@ async function runSync(): Promise<SyncReport> {
       pushed += batch.length;
     }
 
+    const coupons = await dbi.coupons.where("syncState").equals("pending").toArray();
+    for (const batch of chunk(coupons)) {
+      const { error } = await supabase.from("pos_coupons").upsert(batch.map(toRemoteCoupon));
+      if (error) throw error;
+      await dbi.coupons.bulkPut(batch.map((c) => ({ ...c, syncState: "synced" as const })));
+      pushed += batch.length;
+    }
+
+    const customers = await dbi.customers.where("syncState").equals("pending").toArray();
+    for (const batch of chunk(customers)) {
+      const { error } = await supabase.from("pos_customers").upsert(batch.map(toRemoteCustomer));
+      if (error) throw error;
+      await dbi.customers.bulkPut(batch.map((c) => ({ ...c, syncState: "synced" as const })));
+      pushed += batch.length;
+    }
+
+    const shifts = await dbi.shifts.where("syncState").equals("pending").toArray();
+    for (const batch of chunk(shifts)) {
+      const { error } = await supabase.from("pos_shifts").upsert(batch.map(toRemoteShift));
+      if (error) throw error;
+      await dbi.shifts.bulkPut(batch.map((s) => ({ ...s, syncState: "synced" as const })));
+      pushed += batch.length;
+    }
+
     const sales = await dbi.sales.where("syncState").equals("pending").toArray();
     for (const batch of chunk(sales)) {
       const { error } = await supabase.from("pos_sales").upsert(batch.map(toRemoteSale));
@@ -225,6 +356,51 @@ async function runSync(): Promise<SyncReport> {
       // Last write wins; never clobber edits this device has not pushed yet.
       if (!local || (local.syncState === "synced" && incoming.updatedAt > local.updatedAt)) {
         await dbi.products.put(incoming);
+        pulled += 1;
+      }
+    }
+
+    const { data: remoteCoupons, error: couponError } = await supabase
+      .from("pos_coupons")
+      .select("*")
+      .gt("updated_at", since);
+    if (couponError) throw couponError;
+
+    for (const row of remoteCoupons ?? []) {
+      const incoming = fromRemoteCoupon(row);
+      const local = await dbi.coupons.get(incoming.id);
+      if (!local || (local.syncState === "synced" && incoming.updatedAt > local.updatedAt)) {
+        await dbi.coupons.put(incoming);
+        pulled += 1;
+      }
+    }
+
+    const { data: remoteCustomers, error: customerError } = await supabase
+      .from("pos_customers")
+      .select("*")
+      .gt("updated_at", since);
+    if (customerError) throw customerError;
+
+    for (const row of remoteCustomers ?? []) {
+      const incoming = fromRemoteCustomer(row);
+      const local = await dbi.customers.get(incoming.id);
+      if (!local || (local.syncState === "synced" && incoming.updatedAt > local.updatedAt)) {
+        await dbi.customers.put(incoming);
+        pulled += 1;
+      }
+    }
+
+    const { data: remoteShifts, error: shiftError } = await supabase
+      .from("pos_shifts")
+      .select("*")
+      .gt("updated_at", since);
+    if (shiftError) throw shiftError;
+
+    for (const row of remoteShifts ?? []) {
+      const incoming = fromRemoteShift(row);
+      const local = await dbi.shifts.get(incoming.id);
+      if (!local || (local.syncState === "synced" && incoming.updatedAt > local.updatedAt)) {
+        await dbi.shifts.put(incoming);
         pulled += 1;
       }
     }

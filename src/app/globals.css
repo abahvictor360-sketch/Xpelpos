@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --surface: #fcfcfb;
+  --surface: #ffffff;
+  --page: #f4f2ef;
   --chart-cash: #cf6d1e;
   --chart-transfer: #1273c6;
   --chart-card: #8a9500;
@@ -11,34 +12,50 @@
 
 html,
 body {
-  background: #f4f4f1;
+  background: var(--page);
   color: #1f1e19;
   -webkit-tap-highlight-color: transparent;
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-black/5 bg-white shadow-card;
+    @apply rounded-3xl border border-black/[0.04] bg-white shadow-card;
+  }
+  .card-flat {
+    @apply rounded-2xl bg-black/[0.025];
+  }
+  .icon-btn {
+    @apply grid h-10 w-10 place-items-center rounded-full border border-black/5 bg-white text-ink-700/70
+           transition hover:bg-black/[0.03] hover:text-ink-900;
+  }
+  .nav-section {
+    @apply px-3 pb-1.5 pt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-700/40;
+  }
+  .delta-up {
+    @apply chip bg-olive-100 px-2 py-0.5 text-[11px] font-semibold text-olive-900;
+  }
+  .delta-down {
+    @apply chip bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700;
   }
   .input {
-    @apply w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition
-           placeholder:text-ink-700/40 focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20;
+    @apply w-full rounded-2xl border border-black/[0.08] bg-black/[0.02] px-3.5 py-2.5 text-sm outline-none transition
+           placeholder:text-ink-700/35 focus:border-brand-400 focus:bg-white focus:ring-4 focus:ring-brand-400/10;
   }
   .label {
     @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-700/60;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition
            disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-500 text-white hover:bg-brand-600;
+    @apply btn bg-brand-500 text-white shadow-brand hover:bg-brand-600;
   }
   .btn-dark {
     @apply btn bg-ink-800 text-white hover:bg-ink-900;
   }
   .btn-ghost {
-    @apply btn border border-black/10 bg-white text-ink-800 hover:bg-black/5;
+    @apply btn border border-black/[0.08] bg-white text-ink-800 hover:bg-black/[0.03];
   }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium;

@@ -7,38 +7,61 @@ interface StatCardProps {
   value: string;
   hint?: string;
   trend?: { value: string; positive: boolean };
-  accent?: "brand" | "olive" | "blue" | "neutral";
+  /** The filled brand card — one per row, like the reference dashboards. */
+  featured?: boolean;
   icon?: React.ReactNode;
 }
 
-const ACCENTS: Record<NonNullable<StatCardProps["accent"]>, string> = {
-  brand: "bg-brand-50 text-brand-700",
-  olive: "bg-olive-100 text-olive-900",
-  blue: "bg-[#e8f1fb] text-[#0d5aa0]",
-  neutral: "bg-black/5 text-ink-800",
-};
-
-export default function StatCard({ label, value, hint, trend, accent = "neutral", icon }: StatCardProps) {
+export default function StatCard({ label, value, hint, trend, featured, icon }: StatCardProps) {
   return (
-    <div className="card p-4">
+    <div
+      className={cx(
+        "relative overflow-hidden rounded-3xl p-4",
+        featured
+          ? "bg-brand-500 text-white shadow-brand"
+          : "border border-black/[0.04] bg-white shadow-card",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-700/55">{label}</p>
-        {icon && <span className={cx("grid h-8 w-8 place-items-center rounded-lg", ACCENTS[accent])}>{icon}</span>}
-      </div>
-      <p className="tabular mt-2 text-2xl font-bold text-ink-900">{value}</p>
-      <div className="mt-1 flex items-center gap-2 text-xs">
+        <span
+          className={cx(
+            "grid h-10 w-10 place-items-center rounded-2xl",
+            featured ? "bg-white/20 text-white" : "bg-brand-50 text-brand-600",
+          )}
+        >
+          {icon}
+        </span>
         {trend && (
           <span
             className={cx(
-              "chip px-2 py-0.5",
-              trend.positive ? "bg-olive-100 text-olive-900" : "bg-brand-50 text-brand-700",
+              "chip px-2 py-0.5 text-[11px] font-semibold",
+              trend.positive
+                ? featured
+                  ? "bg-white/20 text-white"
+                  : "bg-olive-100 text-olive-900"
+                : featured
+                  ? "bg-ink-900/25 text-white"
+                  : "bg-brand-50 text-brand-700",
             )}
           >
             {trend.positive ? "▲" : "▼"} {trend.value}
           </span>
         )}
-        {hint && <span className="text-ink-700/55">{hint}</span>}
       </div>
+
+      <p className={cx("mt-3 text-xs font-medium", featured ? "text-white/75" : "text-ink-700/55")}>
+        {label}
+      </p>
+      <p className={cx("tabular mt-0.5 text-2xl font-extrabold tracking-tight", featured ? "text-white" : "text-ink-900")}>
+        {value}
+      </p>
+      {hint && (
+        <p className={cx("mt-1 text-[11px]", featured ? "text-white/65" : "text-ink-700/50")}>{hint}</p>
+      )}
+
+      {featured && (
+        <span className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/10" />
+      )}
     </div>
   );
 }

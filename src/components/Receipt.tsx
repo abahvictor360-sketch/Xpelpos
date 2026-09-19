@@ -73,6 +73,7 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
           <dl className="space-y-1 text-xs">
             <Row label="Subtotal" value={formatMoney(sale.subtotal)} />
             {sale.discount > 0 && <Row label="Discount" value={`- ${formatMoney(sale.discount)}`} />}
+            {sale.couponCode && <Row label={`Promo ${sale.couponCode}`} value="applied" />}
             {sale.tax > 0 && <Row label="VAT" value={formatMoney(sale.tax)} />}
             <Row label="Total" value={formatMoney(sale.total)} strong />
             <Row label={`Paid (${sale.paymentMethod})`} value={formatMoney(sale.amountPaid)} />

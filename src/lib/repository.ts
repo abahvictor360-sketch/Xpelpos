@@ -2,8 +2,19 @@
 
 import { getDb, getSetting, setSetting } from "./db";
 import { deleteRemoteProduct } from "./sync";
-import type { CartLine, PaymentMethod, Product, Sale, SaleItem, StockMovement } from "./types";
-import { buildReceiptNo, newId, round2 } from "./utils";
+import type {
+  CartLine,
+  Coupon,
+  Customer,
+  HeldSale,
+  PaymentMethod,
+  Product,
+  Sale,
+  SaleItem,
+  Shift,
+  StockMovement,
+} from "./types";
+import { buildReceiptNo, formatDate, newId, round2 } from "./utils";
 
 const DEVICE_KEY = "device_id";
 
@@ -232,6 +243,9 @@ export interface CheckoutInput {
   note?: string;
   cashierName?: string;
   cashierId?: string | null;
+  couponCode?: string;
+  customerId?: string | null;
+  shiftId?: string | null;
 }
 
 export interface CheckoutResult {
@@ -275,6 +289,9 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     cashierId: input.cashierId ?? null,
     cashierName: (input.cashierName ?? "Counter").trim(),
     deviceId,
+    couponCode: (input.couponCode ?? "").trim().toUpperCase(),
+    customerId: input.customerId ?? null,
+    shiftId: input.shiftId ?? null,
     status: "completed",
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -302,9 +319,22 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     dbi.saleItems,
     dbi.products,
     dbi.stockMovements,
+    dbi.coupons,
     async () => {
       await dbi.sales.add(sale);
       await dbi.saleItems.bulkAdd(items);
+
+      if (sale.couponCode) {
+        const coupon = await dbi.coupons.where("code").equals(sale.couponCode).first();
+        if (coupon) {
+          await dbi.coupons.put({
+            ...coupon,
+            usedCount: coupon.usedCount + 1,
+            updatedAt: nowIso,
+            syncState: "pending",
+          });
+        }
+      }
 
       for (const line of input.lines) {
         const product = await dbi.products.get(line.productId);
@@ -386,13 +416,323 @@ export async function voidSale(saleId: string): Promise<void> {
 
 export async function pendingSyncCount(): Promise<number> {
   const dbi = getDb();
-  const [products, sales, items, movements] = await Promise.all([
+  const counts = await Promise.all([
     dbi.products.where("syncState").equals("pending").count(),
     dbi.sales.where("syncState").equals("pending").count(),
     dbi.saleItems.where("syncState").equals("pending").count(),
     dbi.stockMovements.where("syncState").equals("pending").count(),
+    dbi.coupons.where("syncState").equals("pending").count(),
+    dbi.customers.where("syncState").equals("pending").count(),
+    dbi.shifts.where("syncState").equals("pending").count(),
   ]);
-  return products + sales + items + movements;
+  return counts.reduce((total, count) => total + count, 0);
 }
 
 export type { Product, Sale, SaleItem, StockMovement };
+
+/* ------------------------------------------------------------------ */
+/* Coupons and promo codes                                            */
+/* ------------------------------------------------------------------ */
+
+export interface CouponInput {
+  code: string;
+  description?: string;
+  discountType: Coupon["discountType"];
+  discountValue: number;
+  minSpend?: number;
+  maxDiscount?: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  usageLimit?: number;
+}
+
+export async function saveCoupon(input: CouponInput, id?: string): Promise<Coupon> {
+  const dbi = getDb();
+  const now = new Date().toISOString();
+  const code = input.code.trim().toUpperCase();
+  if (!code) throw new Error("A promo code is required.");
+  if (!/^[A-Z0-9][A-Z0-9-]{1,23}$/.test(code)) {
+    throw new Error("Use 2–24 letters, numbers or dashes for the code.");
+  }
+  if (!(input.discountValue > 0)) {
+    throw new Error("The discount must be greater than zero.");
+  }
+  if (input.discountType === "percent" && input.discountValue > 100) {
+    throw new Error("A percentage discount cannot be more than 100%.");
+  }
+
+  const clash = await dbi.coupons.where("code").equals(code).first();
+  if (clash && clash.id !== id) throw new Error(`The code ${code} is already in use.`);
+
+  const existing = id ? await dbi.coupons.get(id) : undefined;
+  const coupon: Coupon = {
+    id: existing?.id ?? newId(),
+    code,
+    description: (input.description ?? "").trim(),
+    discountType: input.discountType,
+    discountValue: round2(input.discountValue),
+    minSpend: round2(input.minSpend ?? 0),
+    maxDiscount: round2(input.maxDiscount ?? 0),
+    startsAt: input.startsAt || null,
+    endsAt: input.endsAt || null,
+    usageLimit: Math.max(0, Math.trunc(input.usageLimit ?? 0)),
+    usedCount: existing?.usedCount ?? 0,
+    isActive: existing?.isActive ?? true,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    deletedAt: null,
+    syncState: "pending",
+  };
+
+  await dbi.coupons.put(coupon);
+  return coupon;
+}
+
+export async function setCouponActive(id: string, isActive: boolean): Promise<void> {
+  const coupon = await getDb().coupons.get(id);
+  if (!coupon) return;
+  await getDb().coupons.put({
+    ...coupon,
+    isActive,
+    updatedAt: new Date().toISOString(),
+    syncState: "pending",
+  });
+}
+
+export async function deleteCoupon(id: string): Promise<void> {
+  const coupon = await getDb().coupons.get(id);
+  if (!coupon) return;
+  const now = new Date().toISOString();
+  await getDb().coupons.put({
+    ...coupon,
+    isActive: false,
+    deletedAt: now,
+    updatedAt: now,
+    syncState: "pending",
+  });
+}
+
+export interface CouponCheck {
+  ok: boolean;
+  coupon?: Coupon;
+  discount: number;
+  reason?: string;
+}
+
+/** Validates a code against the current basket and returns the money it takes off. */
+export async function applyCoupon(code: string, subtotal: number): Promise<CouponCheck> {
+  const wanted = code.trim().toUpperCase();
+  if (!wanted) return { ok: false, discount: 0, reason: "Enter a promo code." };
+
+  const coupon = await getDb().coupons.where("code").equals(wanted).first();
+  if (!coupon || coupon.deletedAt) return { ok: false, discount: 0, reason: `${wanted} is not a known code.` };
+  if (!coupon.isActive) return { ok: false, discount: 0, reason: `${wanted} is switched off.` };
+
+  const now = Date.now();
+  if (coupon.startsAt && now < new Date(coupon.startsAt).getTime()) {
+    return { ok: false, discount: 0, reason: `${wanted} does not start until ${formatDate(coupon.startsAt)}.` };
+  }
+  if (coupon.endsAt && now > new Date(coupon.endsAt).getTime()) {
+    return { ok: false, discount: 0, reason: `${wanted} expired on ${formatDate(coupon.endsAt)}.` };
+  }
+  if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
+    return { ok: false, discount: 0, reason: `${wanted} has been fully redeemed.` };
+  }
+  if (coupon.minSpend > 0 && subtotal < coupon.minSpend) {
+    return {
+      ok: false,
+      discount: 0,
+      reason: `${wanted} needs a basket of at least ${coupon.minSpend.toLocaleString()}.`,
+    };
+  }
+
+  let discount =
+    coupon.discountType === "percent" ? (subtotal * coupon.discountValue) / 100 : coupon.discountValue;
+  if (coupon.discountType === "percent" && coupon.maxDiscount > 0) {
+    discount = Math.min(discount, coupon.maxDiscount);
+  }
+  discount = round2(Math.min(discount, subtotal));
+
+  return { ok: true, coupon, discount };
+}
+
+/* ------------------------------------------------------------------ */
+/* Customers                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface CustomerInput {
+  name: string;
+  phone?: string;
+  email?: string;
+  note?: string;
+}
+
+export async function saveCustomer(input: CustomerInput, id?: string): Promise<Customer> {
+  const dbi = getDb();
+  const now = new Date().toISOString();
+  const existing = id ? await dbi.customers.get(id) : undefined;
+
+  const customer: Customer = {
+    id: existing?.id ?? newId(),
+    name: input.name.trim(),
+    phone: (input.phone ?? "").trim(),
+    email: (input.email ?? "").trim(),
+    note: (input.note ?? "").trim(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    deletedAt: null,
+    syncState: "pending",
+  };
+
+  await dbi.customers.put(customer);
+  return customer;
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  const customer = await getDb().customers.get(id);
+  if (!customer) return;
+  const now = new Date().toISOString();
+  await getDb().customers.put({ ...customer, deletedAt: now, updatedAt: now, syncState: "pending" });
+}
+
+export async function searchCustomers(term: string, limit = 8): Promise<Customer[]> {
+  const query = term.trim().toLowerCase();
+  const all = await getDb().customers.filter((c) => !c.deletedAt).toArray();
+  const rows = query
+    ? all.filter((c) => [c.name, c.phone, c.email].join(" ").toLowerCase().includes(query))
+    : all;
+  return rows.sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
+}
+
+/** Finds an existing customer by phone, or creates one — used at checkout. */
+export async function upsertCustomerByPhone(name: string, phone: string): Promise<Customer | null> {
+  const trimmedPhone = phone.trim();
+  const trimmedName = name.trim();
+  if (!trimmedPhone && !trimmedName) return null;
+
+  if (trimmedPhone) {
+    const existing = await getDb().customers.where("phone").equals(trimmedPhone).first();
+    if (existing && !existing.deletedAt) {
+      if (trimmedName && trimmedName !== existing.name) {
+        return saveCustomer({ ...existing, name: trimmedName }, existing.id);
+      }
+      return existing;
+    }
+  }
+
+  return saveCustomer({ name: trimmedName || trimmedPhone, phone: trimmedPhone });
+}
+
+/* ------------------------------------------------------------------ */
+/* Shifts and cash-up                                                 */
+/* ------------------------------------------------------------------ */
+
+export async function getOpenShift(): Promise<Shift | undefined> {
+  return getDb().shifts.where("status").equals("open").first();
+}
+
+export async function openShift(cashierName: string, openingFloat: number): Promise<Shift> {
+  const existing = await getOpenShift();
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const shift: Shift = {
+    id: newId(),
+    cashierName: cashierName.trim() || "Counter",
+    deviceId: await getDeviceId(),
+    openedAt: now,
+    closedAt: null,
+    openingFloat: round2(openingFloat),
+    countedCash: 0,
+    expectedCash: 0,
+    variance: 0,
+    cashTotal: 0,
+    transferTotal: 0,
+    cardTotal: 0,
+    salesCount: 0,
+    note: "",
+    status: "open",
+    createdAt: now,
+    updatedAt: now,
+    syncState: "pending",
+  };
+
+  await getDb().shifts.add(shift);
+  return shift;
+}
+
+export interface ShiftTotals {
+  cashTotal: number;
+  transferTotal: number;
+  cardTotal: number;
+  salesCount: number;
+  expectedCash: number;
+}
+
+export async function shiftTotals(shift: Shift): Promise<ShiftTotals> {
+  const sales = await getDb()
+    .sales.filter((sale) => sale.shiftId === shift.id && sale.status === "completed")
+    .toArray();
+
+  const sum = (method: PaymentMethod) =>
+    round2(sales.filter((s) => s.paymentMethod === method).reduce((total, s) => total + s.total, 0));
+
+  const cashTotal = sum("cash");
+  return {
+    cashTotal,
+    transferTotal: sum("transfer"),
+    cardTotal: sum("card"),
+    salesCount: sales.length,
+    expectedCash: round2(shift.openingFloat + cashTotal),
+  };
+}
+
+export async function closeShift(id: string, countedCash: number, note = ""): Promise<Shift | undefined> {
+  const dbi = getDb();
+  const shift = await dbi.shifts.get(id);
+  if (!shift || shift.status === "closed") return shift;
+
+  const totals = await shiftTotals(shift);
+  const now = new Date().toISOString();
+  const closed: Shift = {
+    ...shift,
+    ...totals,
+    countedCash: round2(countedCash),
+    variance: round2(countedCash - totals.expectedCash),
+    note: note.trim(),
+    closedAt: now,
+    status: "closed",
+    updatedAt: now,
+    syncState: "pending",
+  };
+
+  await dbi.shifts.put(closed);
+  return closed;
+}
+
+/* ------------------------------------------------------------------ */
+/* Held (parked) sales — local to the device only                     */
+/* ------------------------------------------------------------------ */
+
+export async function holdSale(lines: CartLine[], label: string, customerName = ""): Promise<void> {
+  if (lines.length === 0) return;
+  await getDb().heldSales.add({
+    id: newId(),
+    label: label.trim() || `Held ${new Date().toLocaleTimeString()}`,
+    lines,
+    customerName,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function resumeHeldSale(id: string): Promise<HeldSale | undefined> {
+  const held = await getDb().heldSales.get(id);
+  if (held) await getDb().heldSales.delete(id);
+  return held;
+}
+
+export async function discardHeldSale(id: string): Promise<void> {
+  await getDb().heldSales.delete(id);
+}
+
+export type { Coupon, Customer, Shift, HeldSale };

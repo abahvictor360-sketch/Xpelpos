@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { AlertTriangle, Archive, Download, PackagePlus, Pencil, Plus, RotateCcw, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, Download, PackagePlus, Pencil, Plus, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import {
   archiveProduct,
@@ -14,6 +14,7 @@ import {
   updateProduct,
 } from "@/lib/repository";
 import Modal from "@/components/Modal";
+import ImportProducts from "@/components/ImportProducts";
 import { toast } from "@/components/Toaster";
 import { exportCsvInventory } from "@/lib/exporters";
 import type { Product } from "@/lib/types";
@@ -39,6 +40,7 @@ export default function InventoryPage() {
   const [restockFor, setRestockFor] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const products = useMemo(
     () => (allProducts ?? []).filter((product) => !product.deletedAt),
@@ -111,6 +113,9 @@ export default function InventoryPage() {
           >
             <Download size={16} /> Export
           </button>
+          <button onClick={() => setImporting(true)} className="btn-ghost">
+            <Upload size={16} /> Import
+          </button>
           <button
             onClick={() => {
               setEditing(null);
@@ -155,8 +160,8 @@ export default function InventoryPage() {
                         <p className="text-xs text-ink-700/50">{product.sku || "No SKU"}</p>
                       </td>
                       <td className="px-4 py-3 text-ink-700/70">{product.category || "—"}</td>
-                      <td className="tabular px-4 py-3 text-right font-medium">{formatMoney(product.price)}</td>
-                      <td className="tabular px-4 py-3 text-right font-semibold">{product.stockQty}</td>
+                      <td className="tabular whitespace-nowrap px-4 py-3 text-right font-medium">{formatMoney(product.price)}</td>
+                      <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">{product.stockQty}</td>
                       <td className="px-4 py-3">
                         <span
                           className={cx(
@@ -229,6 +234,8 @@ export default function InventoryPage() {
       {restockFor && <RestockDialog product={restockFor} onClose={() => setRestockFor(null)} />}
 
       {deleting && <DeleteDialog product={deleting} onClose={() => setDeleting(null)} />}
+
+      {importing && <ImportProducts onClose={() => setImporting(false)} />}
     </div>
   );
 }

@@ -2,16 +2,38 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, CreditCard, Minus, Plus, Smartphone, Trash2, Loader2 } from "lucide-react";
+import {
+  Banknote,
+  CreditCard,
+  Loader2,
+  Minus,
+  PauseCircle,
+  Plus,
+  Smartphone,
+  Tag,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
 import ProductSearch from "@/components/ProductSearch";
 import Receipt from "@/components/Receipt";
-import { cartTotals, checkout } from "@/lib/repository";
+import {
+  applyCoupon,
+  cartTotals,
+  checkout,
+  discardHeldSale,
+  getOpenShift,
+  holdSale,
+  resumeHeldSale,
+  upsertCustomerByPhone,
+} from "@/lib/repository";
+import { db } from "@/lib/db";
 import { getSetting } from "@/lib/db";
 import { useStoreProfile } from "@/lib/store-profile";
 import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
-import type { CartLine, PaymentMethod, Product, Sale, SaleItem } from "@/lib/types";
-import { cx, formatMoney } from "@/lib/utils";
+import type { CartLine, Coupon, HeldSale, PaymentMethod, Product, Sale, SaleItem, Shift } from "@/lib/types";
+import { cx, formatMoney, round2 } from "@/lib/utils";
 
 const METHODS: Array<{ id: PaymentMethod; label: string; icon: React.ElementType }> = [
   { id: "cash", label: "Cash", icon: Banknote },
@@ -25,15 +47,37 @@ export default function SellPage() {
   const [discount, setDiscount] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [promoInput, setPromoInput] = useState("");
+  const [promo, setPromo] = useState<{ coupon: Coupon; discount: number } | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [shift, setShift] = useState<Shift | undefined>();
   const [cashierName, setCashierName] = useState("Counter");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
   const store = useStoreProfile();
+  const held = useLiveQuery(() => db.heldSales.toArray(), [], [] as HeldSale[]);
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((value) => setCashierName(value || "Counter"));
+    void getOpenShift().then(setShift);
   }, []);
+
+  // A promo's value depends on the basket, so re-check it whenever the cart moves.
+  useEffect(() => {
+    if (!promo) return;
+    const subtotal = cartTotals(lines).subtotal;
+    void applyCoupon(promo.coupon.code, subtotal).then((result) => {
+      if (!result.ok || !result.coupon) {
+        setPromo(null);
+        setPromoError(result.reason ?? "");
+        return;
+      }
+      setPromo({ coupon: result.coupon, discount: result.discount });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines]);
 
   // Till shortcuts: F2 jumps to the search box, F9 closes the sale.
   useEffect(() => {
@@ -51,7 +95,8 @@ export default function SellPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  const discountValue = Math.max(0, Number(discount) || 0);
+  const manualDiscount = Math.max(0, Number(discount) || 0);
+  const discountValue = round2(manualDiscount + (promo?.discount ?? 0));
   const totals = useMemo(
     () => cartTotals(lines, discountValue, store.vatRate),
     [lines, discountValue, store.vatRate],
@@ -109,7 +154,38 @@ export default function SellPage() {
     setDiscount("");
     setAmountPaid("");
     setCustomerName("");
+    setCustomerPhone("");
+    setPromo(null);
+    setPromoInput("");
+    setPromoError("");
     setError("");
+  };
+
+  const redeemPromo = async () => {
+    setPromoError("");
+    const result = await applyCoupon(promoInput, cartTotals(lines).subtotal);
+    if (!result.ok || !result.coupon) {
+      setPromoError(result.reason ?? "That code cannot be used.");
+      return;
+    }
+    setPromo({ coupon: result.coupon, discount: result.discount });
+    setPromoInput("");
+    toast(`${result.coupon.code} applied — ${formatMoney(result.discount)} off.`, "success");
+  };
+
+  const parkSale = async () => {
+    if (lines.length === 0) return;
+    await holdSale(lines, customerName || `Held ${new Date().toLocaleTimeString()}`, customerName);
+    clearCart();
+    toast("Sale parked — resume it from the Held sales list.", "success");
+  };
+
+  const restoreHeld = async (id: string) => {
+    const restored = await resumeHeldSale(id);
+    if (!restored) return;
+    setLines(restored.lines);
+    setCustomerName(restored.customerName);
+    toast("Held sale resumed.", "success");
   };
 
   const completeSale = async () => {
@@ -123,6 +199,7 @@ export default function SellPage() {
     }
     setBusy(true);
     try {
+      const customer = await upsertCustomerByPhone(customerName, customerPhone);
       const result = await checkout({
         lines,
         paymentMethod: method,
@@ -130,7 +207,11 @@ export default function SellPage() {
         vatRate: store.vatRate,
         amountPaid: paid,
         customerName,
+        customerPhone,
         cashierName,
+        couponCode: promo?.coupon.code ?? "",
+        customerId: customer?.id ?? null,
+        shiftId: shift?.id ?? null,
       });
       setReceipt(result);
       clearCart();
@@ -154,9 +235,17 @@ export default function SellPage() {
               Cart <span className="text-ink-700/50">({totals.itemCount} item{totals.itemCount === 1 ? "" : "s"})</span>
             </h2>
             {lines.length > 0 && (
-              <button onClick={clearCart} className="text-xs font-medium text-brand-700 hover:underline">
-                Clear all
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => void parkSale()}
+                  className="flex items-center gap-1 text-xs font-medium text-ink-700/70 hover:text-ink-900"
+                >
+                  <PauseCircle size={14} /> Hold
+                </button>
+                <button onClick={clearCart} className="text-xs font-medium text-brand-700 hover:underline">
+                  Clear all
+                </button>
+              </div>
             )}
           </div>
 
@@ -221,10 +310,48 @@ export default function SellPage() {
             </ul>
           )}
         </div>
+        {(held?.length ?? 0) > 0 && (
+          <div className="card p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/55">
+              Held sales ({held?.length})
+            </p>
+            <ul className="flex flex-wrap gap-2">
+              {held?.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex items-center gap-2 rounded-xl border border-black/10 px-3 py-1.5 text-sm"
+                >
+                  <button onClick={() => void restoreHeld(entry.id)} className="font-medium text-ink-900">
+                    {entry.label}
+                    <span className="ml-1 text-xs text-ink-700/50">
+                      ({entry.lines.reduce((sum, line) => sum + line.quantity, 0)})
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => void discardHeldSale(entry.id)}
+                    aria-label={`Discard ${entry.label}`}
+                    className="text-ink-700/40 hover:text-brand-700"
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="card h-fit p-4 lg:sticky lg:top-20">
-        <h2 className="text-sm font-bold text-ink-900">Checkout</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-ink-900">Checkout</h2>
+          {shift ? (
+            <span className="chip bg-olive-100 text-olive-900">Shift open</span>
+          ) : (
+            <Link href="/shifts" className="chip bg-black/5 text-ink-700/70 hover:bg-black/10">
+              No shift open
+            </Link>
+          )}
+        </div>
 
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between text-ink-700/75">
@@ -235,6 +362,22 @@ export default function SellPage() {
             <dt>Discount</dt>
             <dd className="tabular font-medium">- {formatMoney(discountValue)}</dd>
           </div>
+          {promo && (
+            <div className="flex items-center justify-between rounded-xl bg-olive-100 px-2.5 py-1.5 text-xs font-semibold text-olive-900">
+              <span className="flex items-center gap-1.5">
+                <Tag size={13} /> {promo.coupon.code}
+                <span className="font-normal">
+                  ({promo.coupon.discountType === "percent" ? `${promo.coupon.discountValue}%` : "fixed"})
+                </span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="tabular">- {formatMoney(promo.discount)}</span>
+                <button onClick={() => setPromo(null)} aria-label="Remove promo code">
+                  <X size={13} />
+                </button>
+              </span>
+            </div>
+          )}
           {store.vatRate > 0 && (
             <div className="flex justify-between text-ink-700/75">
               <dt>VAT ({store.vatRate}%)</dt>
@@ -295,14 +438,50 @@ export default function SellPage() {
         </div>
 
         <div className="mt-4">
-          <label className="label" htmlFor="customer">Customer (optional)</label>
-          <input
-            id="customer"
-            value={customerName}
-            onChange={(event) => setCustomerName(event.target.value)}
-            className="input"
-            placeholder="Walk-in customer"
-          />
+          <label className="label" htmlFor="promo">Promo code</label>
+          <div className="flex gap-2">
+            <input
+              id="promo"
+              value={promoInput}
+              onChange={(event) => setPromoInput(event.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void redeemPromo();
+                }
+              }}
+              className="input uppercase"
+              placeholder="XMAS10"
+            />
+            <button onClick={() => void redeemPromo()} disabled={!promoInput} className="btn-ghost">
+              Apply
+            </button>
+          </div>
+          {promoError && <p className="mt-1.5 text-xs font-medium text-brand-700">{promoError}</p>}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="customer">Customer</label>
+            <input
+              id="customer"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              className="input"
+              placeholder="Walk-in"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="customer-phone">Phone</label>
+            <input
+              id="customer-phone"
+              value={customerPhone}
+              onChange={(event) => setCustomerPhone(event.target.value)}
+              className="input"
+              inputMode="tel"
+              placeholder="Optional"
+            />
+          </div>
         </div>
 
         {method === "cash" && change > 0 && (

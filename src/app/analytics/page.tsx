@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Receipt, ShoppingBag, TrendingUp, Wallet } from "lucide-react";
 import { PaymentSplit, RevenueChart, TopProductsChart } from "@/components/Charts";
 import StatCard from "@/components/StatCard";
 import { useReport } from "@/lib/useReport";
@@ -49,9 +50,9 @@ export default function AnalyticsPage() {
             key={period.key}
             onClick={() => setDays(period.key)}
             className={cx(
-              "rounded-xl px-3 py-2 text-sm font-medium transition",
+              "rounded-2xl px-3.5 py-2 text-sm font-medium transition",
               days === period.key
-                ? "bg-ink-800 text-white"
+                ? "bg-brand-500 text-white shadow-brand"
                 : "border border-black/10 bg-white text-ink-700/70 hover:bg-black/[0.03]",
             )}
           >
@@ -64,26 +65,27 @@ export default function AnalyticsPage() {
         <StatCard
           label="Revenue"
           value={formatMoney(revenue)}
-          accent="brand"
+          featured
+          icon={<Wallet size={18} />}
           trend={delta === null ? undefined : { value: `${Math.abs(delta).toFixed(1)}%`, positive: delta >= 0 }}
           hint="vs previous period"
         />
         <StatCard
           label="Gross profit"
           value={formatMoney(report?.summary.grossProfit ?? 0)}
-          accent="olive"
+          icon={<TrendingUp size={18} />}
           hint="selling price minus cost"
         />
         <StatCard
           label="Transactions"
           value={formatNumber(report?.summary.transactions ?? 0)}
-          accent="blue"
+          icon={<Receipt size={18} />}
           hint={`${formatNumber(report?.summary.itemsSold ?? 0)} items sold`}
         />
         <StatCard
           label="Average basket"
           value={formatMoney(report?.summary.averageBasket ?? 0)}
-          accent="neutral"
+          icon={<ShoppingBag size={18} />}
           hint={`${formatMoney(report?.summary.discountGiven ?? 0)} discounted`}
         />
       </div>
@@ -94,7 +96,7 @@ export default function AnalyticsPage() {
         <RevenueChart data={report?.series ?? []} />
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[1.5fr_1fr]">
         <section className="card p-4">
           <h2 className="text-sm font-bold text-ink-900">Best selling products</h2>
           <p className="mb-2 text-xs text-ink-700/55">Ranked by revenue</p>
@@ -130,9 +132,9 @@ export default function AnalyticsPage() {
                   <tr key={`${product.name}-${product.sku}`} className="hover:bg-black/[0.015]">
                     <td className="px-4 py-3 font-medium text-ink-900">{product.name}</td>
                     <td className="px-4 py-3 text-ink-700/60">{product.sku || "—"}</td>
-                    <td className="tabular px-4 py-3 text-right">{formatNumber(product.quantity)}</td>
-                    <td className="tabular px-4 py-3 text-right font-semibold">{formatMoney(product.revenue)}</td>
-                    <td className="tabular px-4 py-3 text-right text-olive-800">{formatMoney(product.profit)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right">{formatNumber(product.quantity)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">{formatMoney(product.revenue)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right text-olive-800">{formatMoney(product.profit)}</td>
                   </tr>
                 ))}
               </tbody>

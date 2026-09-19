@@ -1,7 +1,17 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
-import type { AppSetting, Product, Sale, SaleItem, StockMovement } from "./types";
+import type {
+  AppSetting,
+  Coupon,
+  Customer,
+  HeldSale,
+  Product,
+  Sale,
+  SaleItem,
+  Shift,
+  StockMovement,
+} from "./types";
 
 class XpelPosDatabase extends Dexie {
   products!: Table<Product, string>;
@@ -9,6 +19,10 @@ class XpelPosDatabase extends Dexie {
   saleItems!: Table<SaleItem, string>;
   stockMovements!: Table<StockMovement, string>;
   settings!: Table<AppSetting, string>;
+  coupons!: Table<Coupon, string>;
+  customers!: Table<Customer, string>;
+  shifts!: Table<Shift, string>;
+  heldSales!: Table<HeldSale, string>;
 
   constructor() {
     super("xpel-pos");
@@ -19,6 +33,25 @@ class XpelPosDatabase extends Dexie {
       stockMovements: "id, productId, reason, createdAt, syncState",
       settings: "key",
     });
+
+    this.version(2)
+      .stores({
+        coupons: "id, code, isActive, updatedAt, syncState, deletedAt",
+        customers: "id, phone, name, updatedAt, syncState, deletedAt",
+        shifts: "id, status, openedAt, updatedAt, syncState",
+        heldSales: "id, createdAt",
+      })
+      .upgrade(async (tx) => {
+        // Sales created before coupons/customers/shifts existed get empty links.
+        await tx
+          .table("sales")
+          .toCollection()
+          .modify((sale: Record<string, unknown>) => {
+            sale.couponCode ??= "";
+            sale.customerId ??= null;
+            sale.shiftId ??= null;
+          });
+      });
   }
 }
 

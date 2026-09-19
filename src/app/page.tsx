@@ -9,7 +9,7 @@ import { PaymentSplit, RevenueChart } from "@/components/Charts";
 import { db } from "@/lib/db";
 import { useReport } from "@/lib/useReport";
 import type { Product } from "@/lib/types";
-import { addDays, endOfDay, formatDateTime, formatMoney, formatNumber, startOfDay } from "@/lib/utils";
+import { addDays, endOfDay, formatMoney, formatNumber, formatTime, startOfDay } from "@/lib/utils";
 
 export default function DashboardPage() {
   const today = useMemo(() => new Date(), []);
@@ -48,8 +48,8 @@ export default function DashboardPage() {
         <StatCard
           label="Revenue today"
           value={formatMoney(revenueToday)}
-          accent="brand"
-          icon={<Wallet size={16} />}
+          featured
+          icon={<Wallet size={18} />}
           trend={
             delta === null
               ? undefined
@@ -60,27 +60,24 @@ export default function DashboardPage() {
         <StatCard
           label="Sales today"
           value={formatNumber(todayReport?.summary.transactions ?? 0)}
-          accent="blue"
-          icon={<Receipt size={16} />}
+          icon={<Receipt size={18} />}
           hint={`${formatNumber(todayReport?.summary.itemsSold ?? 0)} items sold`}
         />
         <StatCard
           label="Average basket"
           value={formatMoney(todayReport?.summary.averageBasket ?? 0)}
-          accent="olive"
-          icon={<ShoppingBag size={16} />}
+          icon={<ShoppingBag size={18} />}
           hint="per transaction"
         />
         <StatCard
           label="Products"
           value={formatNumber(products?.length ?? 0)}
-          accent="neutral"
-          icon={<Boxes size={16} />}
+          icon={<Boxes size={18} />}
           hint={`${lowStock.length} need restocking`}
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[1.7fr_1fr]">
         <section className="card p-4">
           <div className="mb-2 flex items-center justify-between">
             <div>
@@ -103,7 +100,7 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[1.7fr_1fr]">
         <section className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
             <h2 className="text-sm font-bold text-ink-900">Today&apos;s transactions</h2>
@@ -120,7 +117,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-left text-sm">
+              <table className="w-full min-w-[540px] text-left text-sm">
                 <thead className="border-b border-black/5 text-xs uppercase tracking-wide text-ink-700/50">
                   <tr>
                     <th className="px-4 py-2.5 font-medium">Receipt</th>
@@ -134,10 +131,14 @@ export default function DashboardPage() {
                   {recent.map((row) => (
                     <tr key={row.receiptNo}>
                       <td className="whitespace-nowrap px-4 py-3 text-xs font-medium text-ink-900">{row.receiptNo}</td>
-                      <td className="max-w-[240px] truncate px-4 py-3 text-ink-700/70">{row.items}</td>
-                      <td className="px-4 py-3 text-ink-700/70">{formatDateTime(row.soldAt)}</td>
+                      <td className="max-w-[220px] truncate px-4 py-3 text-ink-700/70" title={row.items}>
+                      {row.items}
+                    </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-700/70">{formatTime(row.soldAt)}</td>
                       <td className="px-4 py-3 capitalize text-ink-700/70">{row.paymentMethod}</td>
-                      <td className="tabular px-4 py-3 text-right font-semibold">{formatMoney(row.total)}</td>
+                      <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">
+                      {formatMoney(row.total)}
+                    </td>
                     </tr>
                   ))}
                 </tbody>

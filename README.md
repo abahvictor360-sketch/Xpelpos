@@ -26,6 +26,19 @@ synced to Supabase in the background, so the till keeps working when the network
   back), and export to **Excel (.xlsx), PDF (.pdf) and Word (.docx)**.
 - **Analytics** — revenue trend, gross profit, average basket, best-selling products and
   payment-method split for 7 / 30 / 90 days.
+- **Product import** — bring a whole catalogue in from Excel or CSV. Column names are matched
+  loosely (*Product*, *Qty*, *Selling price* all work), messy values like `₦8,500` are parsed,
+  and every row is previewed with its outcome before anything is written. Existing products
+  are matched on SKU (else name) and can be updated or skipped; a template is downloadable.
+- **Coupons & promo codes** — percentage or fixed-amount, with minimum spend, maximum
+  discount, start/end dates and a redemption limit. The cashier types the code at checkout,
+  it revalidates as the basket changes, and redemptions are counted per code.
+- **Customers** — saved automatically from a phone number at checkout, with visit count,
+  total spend and purchase history.
+- **Shifts & cash-up** — open the till with a float, see cash/transfer/card totals build up
+  live, then count the drawer at closing. Variance is calculated and a printable Z-report is
+  produced.
+- **Held sales** — park a basket when a customer steps away and resume it later.
 - **Offline first** — IndexedDB (Dexie) is the source of truth. Every write is queued with
   a `pending` flag and uploaded by a sync engine that runs on app launch, the moment the
   device comes back online, when the window regains focus, right after signing in, and on

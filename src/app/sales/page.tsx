@@ -111,9 +111,9 @@ export default function SalesPage() {
                 key={range.key}
                 onClick={() => setRangeKey(range.key)}
                 className={cx(
-                  "rounded-xl px-3 py-2 text-sm font-medium transition",
+                  "rounded-2xl px-3.5 py-2 text-sm font-medium transition",
                   rangeKey === range.key
-                    ? "bg-ink-800 text-white"
+                    ? "bg-brand-500 text-white shadow-brand"
                     : "border border-black/10 bg-white text-ink-700/70 hover:bg-black/[0.03]",
                 )}
               >
@@ -218,13 +218,13 @@ export default function SalesPage() {
                 {filtered.rows.map((row) => (
                   <tr key={row.receiptNo} className="hover:bg-black/[0.015]">
                     <td className="whitespace-nowrap px-4 py-3 text-xs font-medium text-ink-900">{row.receiptNo}</td>
-                    <td className="px-4 py-3 text-ink-700/70">{formatDateTime(row.soldAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-700/70">{formatDateTime(row.soldAt)}</td>
                     <td className="max-w-[280px] truncate px-4 py-3 text-ink-700/70" title={row.items}>
                       {row.items}
                     </td>
-                    <td className="tabular px-4 py-3 text-right">{row.itemCount}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right">{row.itemCount}</td>
                     <td className="px-4 py-3 capitalize text-ink-700/70">{row.paymentMethod}</td>
-                    <td className="tabular px-4 py-3 text-right font-semibold">{formatMoney(row.total)}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">{formatMoney(row.total)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         {row.status !== "completed" && (
