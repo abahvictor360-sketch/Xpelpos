@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Download, LogOut, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { CheckCircle2, Download, KeyRound, LogOut, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { getDb, getSetting, setSetting } from "@/lib/db";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { getLastSyncAt, syncNow } from "@/lib/sync";
@@ -25,6 +25,8 @@ export default function SettingsPage() {
   const [pending, setPending] = useState(0);
   const [busy, setBusy] = useState("");
   const [profile, setProfile] = useState<StoreProfile>(DEFAULT_PROFILE);
+  const [nextSecret, setNextSecret] = useState("");
+  const [repeatSecret, setRepeatSecret] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
 
   const refresh = async () => {
@@ -78,6 +80,31 @@ export default function SettingsPage() {
     );
     setBusy("");
     void refresh();
+  };
+
+  /** Lets a till change its own sign-in credential without the Supabase dashboard. */
+  const changeCredential = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const supabase = getSupabase();
+    if (!supabase) return;
+    if (nextSecret.length < 8) {
+      toast("Use at least 8 characters.", "error");
+      return;
+    }
+    if (nextSecret !== repeatSecret) {
+      toast("The two entries do not match.", "error");
+      return;
+    }
+    setBusy("credential");
+    const { error } = await supabase.auth.updateUser({ password: nextSecret });
+    setBusy("");
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    setNextSecret("");
+    setRepeatSecret("");
+    toast("Sign-in updated for this account.", "success");
   };
 
   const signOut = async () => {
@@ -181,6 +208,38 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+        )}
+
+        {session && (
+          <form onSubmit={changeCredential} className="mt-4 rounded-2xl bg-black/[0.03] p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-700/55">
+              Change sign-in
+            </p>
+            <p className="mt-1 text-xs text-ink-700/55">
+              Replace the temporary one you were given. At least 8 characters.
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <input
+                value={nextSecret}
+                onChange={(event) => setNextSecret(event.target.value)}
+                className="input"
+                type="password"
+                placeholder="New sign-in"
+                autoComplete="new-password"
+              />
+              <input
+                value={repeatSecret}
+                onChange={(event) => setRepeatSecret(event.target.value)}
+                className="input"
+                type="password"
+                placeholder="Repeat it"
+                autoComplete="new-password"
+              />
+            </div>
+            <button type="submit" disabled={busy === "credential" || !nextSecret} className="btn-ghost mt-2">
+              <KeyRound size={16} /> Update sign-in
+            </button>
+          </form>
         )}
 
         <div className="mt-3 flex flex-wrap gap-2">
