@@ -26,9 +26,12 @@ synced to Supabase in the background, so the till keeps working when the network
   back), and export to **Excel (.xlsx), PDF (.pdf) and Word (.docx)**.
 - **Analytics** — revenue trend, gross profit, average basket, best-selling products and
   payment-method split for 7 / 30 / 90 days.
-- **Offline first** — IndexedDB (Dexie) is the source of truth; a background sync pushes
-  pending rows to Supabase and pulls changes from other devices every 2 minutes, when the
-  connection returns, and on demand.
+- **Offline first** — IndexedDB (Dexie) is the source of truth. Every write is queued with
+  a `pending` flag and uploaded by a sync engine that runs on app launch, the moment the
+  device comes back online, when the window regains focus, right after signing in, and on
+  a timer — backing off exponentially while the backend is unreachable. Concurrent runs
+  collapse onto one, so a row is never uploaded twice. Nothing is lost while offline:
+  the queue simply drains when a connection appears.
 - **Installable** — a PWA with a service worker, so it installs on **Windows** (Edge/Chrome)
   and **Android** (Chrome) and runs in its own window.
 

@@ -138,7 +138,22 @@ const toRemoteMovement = (m: StockMovement) => ({
   created_at: m.createdAt,
 });
 
-export async function syncNow(): Promise<SyncReport> {
+let inFlight: Promise<SyncReport> | null = null;
+
+/**
+ * Runs a sync, collapsing concurrent callers onto the same run so a manual tap
+ * and a scheduled attempt can never upload the same rows twice.
+ */
+export function syncNow(): Promise<SyncReport> {
+  if (!inFlight) {
+    inFlight = runSync().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
+}
+
+async function runSync(): Promise<SyncReport> {
   const at = new Date().toISOString();
   if (!isSupabaseConfigured()) {
     return { ok: false, pushed: 0, pulled: 0, message: "Cloud sync is not configured.", at };
