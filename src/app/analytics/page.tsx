@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { Receipt, ShoppingBag, TrendingUp, Wallet } from "lucide-react";
 import { PaymentSplit, RevenueChart, TopProductsChart } from "@/components/Charts";
 import StatCard from "@/components/StatCard";
+import { db } from "@/lib/db";
 import { useReport } from "@/lib/useReport";
 import { addDays, cx, endOfDay, formatMoney, formatNumber, startOfDay } from "@/lib/utils";
 
@@ -15,6 +17,15 @@ const PERIODS = [
 
 export default function AnalyticsPage() {
   const [days, setDays] = useState<(typeof PERIODS)[number]["key"]>("30");
+
+  // Profit is only meaningful once cost prices are recorded; say so rather than
+  // letting a zero cost read as a 100% margin.
+  const missingCost =
+    useLiveQuery(
+      () => db.products.filter((product) => !product.deletedAt && product.costPrice <= 0).count(),
+      [],
+      0,
+    ) ?? 0;
 
   const { from, to, prevFrom, prevTo } = useMemo(() => {
     const span = Number(days);
@@ -74,7 +85,11 @@ export default function AnalyticsPage() {
           label="Gross profit"
           value={formatMoney(report?.summary.grossProfit ?? 0)}
           icon={<TrendingUp size={18} />}
-          hint="selling price minus cost"
+          hint={
+            missingCost > 0
+              ? `overstated — no cost price on ${missingCost} product${missingCost === 1 ? "" : "s"}`
+              : "selling price minus cost"
+          }
         />
         <StatCard
           label="Transactions"
