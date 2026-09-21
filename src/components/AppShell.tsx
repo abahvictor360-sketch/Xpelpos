@@ -94,6 +94,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const current = FLAT.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)));
 
+  if (pathname.startsWith("/download")) return <>{children}</>;
+
   return (
     <div className="min-h-screen p-0 lg:flex lg:gap-5 lg:p-5">
       {menuOpen && (
