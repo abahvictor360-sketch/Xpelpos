@@ -7,7 +7,7 @@ const nextBin = require.resolve("next/dist/bin/next");
 
 const result = spawnSync(process.execPath, [nextBin, "build"], {
   stdio: "inherit",
-  env: { ...process.env, DESKTOP_BUILD: "1" },
+  env: { ...process.env, DESKTOP_BUILD: "1", NEXT_PUBLIC_DESKTOP: "1" },
 });
 
 if (result.error) {

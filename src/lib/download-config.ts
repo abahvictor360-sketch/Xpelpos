@@ -1,13 +1,20 @@
-// Where the Windows build is hosted. Point these at the GitHub release (or any
-// static host) that carries the packaged installer, then redeploy.
+// Where the Windows build is hosted. The filenames electron-builder writes
+// carry the version, so they are derived from it rather than repeated: bump the
+// version here (and in package.json) and both links follow.
+const version = process.env.NEXT_PUBLIC_POS_VERSION || "1.0.1";
+
+const releaseBase =
+  process.env.NEXT_PUBLIC_POS_RELEASE_BASE ||
+  "https://github.com/abahvictor360-sketch/Xpelpos/releases/latest/download";
+
 export const DESKTOP_RELEASE = {
-  version: process.env.NEXT_PUBLIC_POS_VERSION || "1.0.0",
+  version,
   installerUrl:
     process.env.NEXT_PUBLIC_POS_INSTALLER_URL ||
-    "https://github.com/abahvictor360-sketch/Xpelpos/releases/latest/download/Xpel-POS-Setup-1.0.0.exe",
+    `${releaseBase}/Xpel-POS-Setup-${version}.exe`,
   portableUrl:
     process.env.NEXT_PUBLIC_POS_PORTABLE_URL ||
-    "https://github.com/abahvictor360-sketch/Xpelpos/releases/latest/download/Xpel-POS-1.0.0-portable.exe",
+    `${releaseBase}/Xpel-POS-${version}-portable.exe`,
   installerSize: "113 MB",
   portableSize: "113 MB",
 };

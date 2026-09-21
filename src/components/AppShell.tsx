@@ -58,7 +58,18 @@ const NAV = [
   },
 ];
 
-const FLAT = NAV.flatMap((group) => group.items);
+// The desktop build is already installed, so the PWA install route and its
+// header button have nothing to offer there.
+const IS_DESKTOP = process.env.NEXT_PUBLIC_DESKTOP === "1";
+
+const MENU = IS_DESKTOP
+  ? NAV.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.href !== "/install"),
+    })).filter((group) => group.items.length > 0)
+  : NAV;
+
+const FLAT = MENU.flatMap((group) => group.items);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -131,7 +142,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="-mr-1 flex-1 overflow-y-auto pr-1">
-          {NAV.map((group) => (
+          {MENU.map((group) => (
             <div key={group.section}>
               <p className="nav-section">{group.section}</p>
               <div className="space-y-0.5">
@@ -181,7 +192,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <InstallButton />
+            {!IS_DESKTOP && <InstallButton />}
             <SyncBadge />
             <Link href="/sell" className="btn-primary hidden sm:inline-flex">
               <ShoppingCart size={16} /> New sale
