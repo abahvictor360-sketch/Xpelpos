@@ -10,6 +10,7 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  History,
   LayoutDashboard,
   Menu,
   Receipt,
@@ -17,10 +18,12 @@ import {
   ShoppingCart,
   Tag,
   Users,
+  Warehouse,
   X,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { seedOnFirstRun } from "@/lib/seed";
+import { pruneActivities } from "@/lib/activity";
 import SyncBadge from "./SyncBadge";
 import InstallButton from "./InstallButton";
 import Toaster from "./Toaster";
@@ -44,10 +47,22 @@ const NAV = [
     ],
   },
   {
+    section: "Warehouse",
+    items: [
+      {
+        href: "/transfers",
+        label: "Transfer In & Out",
+        icon: Warehouse,
+        caption: "Stock received from or returned to the warehouse",
+      },
+    ],
+  },
+  {
     section: "Insights",
     items: [
       { href: "/sales", label: "Sales & Reports", icon: Receipt, caption: "History and exports" },
       { href: "/analytics", label: "Analytics", icon: BarChart3, caption: "Trends and best sellers" },
+      { href: "/activity", label: "Activity Log", icon: History, caption: "Everything that happened on this till" },
     ],
   },
   {
@@ -83,6 +98,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // A fresh install opens with the shop's catalogue already in place.
     void seedOnFirstRun();
+    void pruneActivities();
   }, []);
 
   useEffect(() => {

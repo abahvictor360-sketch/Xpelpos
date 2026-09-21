@@ -59,6 +59,8 @@ export interface Coupon {
 
 export interface Customer {
   id: string;
+  /** Short human-readable code (XC-0001) that tells apart two same-named customers. */
+  code: string;
   name: string;
   phone: string;
   email: string;
@@ -128,9 +130,58 @@ export interface StockMovement {
   id: string;
   productId: string;
   changeQty: number;
-  reason: "sale" | "restock" | "adjustment" | "initial" | "refund";
+  reason: "sale" | "restock" | "adjustment" | "initial" | "refund" | "transfer-in" | "transfer-out";
   referenceId: string | null;
   note: string;
+  createdAt: string;
+  syncState: SyncState;
+}
+
+export type TransferDirection = "in" | "out";
+
+/** Stock moving between the warehouse and this till. */
+export interface Transfer {
+  id: string;
+  reference: string;
+  direction: TransferDirection;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  stockBefore: number;
+  stockAfter: number;
+  party: string;
+  note: string;
+  staffName: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  syncState: SyncState;
+}
+
+export type ActivityKind =
+  | "sale"
+  | "refund"
+  | "void"
+  | "transfer-in"
+  | "transfer-out"
+  | "product"
+  | "stock"
+  | "customer"
+  | "shift"
+  | "promotion"
+  | "system";
+
+/** One line in the running record of what happened on this till. */
+export interface Activity {
+  id: string;
+  kind: ActivityKind;
+  message: string;
+  detail: string;
+  amount: number | null;
+  referenceId: string | null;
+  staffName: string;
+  deviceId: string;
   createdAt: string;
   syncState: SyncState;
 }

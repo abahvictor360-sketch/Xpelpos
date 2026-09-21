@@ -1,7 +1,7 @@
 // Where the Windows build is hosted. The filenames electron-builder writes
 // carry the version, so they are derived from it rather than repeated: bump the
 // version here (and in package.json) and both links follow.
-const version = process.env.NEXT_PUBLIC_POS_VERSION || "1.0.3";
+const version = process.env.NEXT_PUBLIC_POS_VERSION || "1.0.4";
 
 const releaseBase =
   process.env.NEXT_PUBLIC_POS_RELEASE_BASE ||

@@ -3,6 +3,7 @@
 import { getDb, getSetting, setSetting } from "./db";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import type { Coupon, Customer, Product, Sale, SaleItem, Shift, StockMovement } from "./types";
+import { customerCodeFor } from "./utils";
 
 const LAST_PULL_KEY = "last_pull_at";
 const CHUNK = 200;
@@ -194,6 +195,8 @@ const toRemoteCustomer = (c: Customer) => ({
 
 const fromRemoteCustomer = (row: Record<string, any>): Customer => ({
   id: row.id,
+  // Derived rather than stored, so the cloud table needs no extra column.
+  code: customerCodeFor(row.id),
   name: row.name,
   phone: row.phone ?? "",
   email: row.email ?? "",
