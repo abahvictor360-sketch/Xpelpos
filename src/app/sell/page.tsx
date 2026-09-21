@@ -353,6 +353,29 @@ export default function SellPage() {
           )}
         </div>
 
+        {lines.length > 0 && (
+          <>
+            {/* What is being paid for, so the cashier can read it back to the
+                customer without looking away from the checkout panel. */}
+            <ul className="mt-3 max-h-56 space-y-1.5 overflow-y-auto pr-1 text-sm">
+              {lines.map((line) => (
+                <li key={line.productId} className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 text-ink-700/75">
+                    <span className="block truncate text-ink-900">{line.name}</span>
+                    <span className="tabular text-xs text-ink-700/50">
+                      {line.quantity} × {formatMoney(line.unitPrice)}
+                    </span>
+                  </span>
+                  <span className="tabular shrink-0 font-medium text-ink-900">
+                    {formatMoney(line.unitPrice * line.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 border-t border-dashed border-black/10" />
+          </>
+        )}
+
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between text-ink-700/75">
             <dt>Subtotal</dt>
