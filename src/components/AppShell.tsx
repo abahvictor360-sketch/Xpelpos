@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
-import { seedOnFirstRun } from "@/lib/seed";
+import { seedOnFirstRun, syncCatalogueOnUpdate } from "@/lib/seed";
 import { pruneActivities } from "@/lib/activity";
 import SyncBadge from "./SyncBadge";
 import InstallButton from "./InstallButton";
@@ -96,8 +96,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
-    // A fresh install opens with the shop's catalogue already in place.
-    void seedOnFirstRun();
+    // A fresh install opens with the shop's catalogue already in place; a till
+    // stocked by an older version catches up on what changed since.
+    void seedOnFirstRun().then(() => syncCatalogueOnUpdate());
     void pruneActivities();
   }, []);
 
