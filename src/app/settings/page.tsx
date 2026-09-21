@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Download, KeyRound, LogOut, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { Boxes, CheckCircle2, Download, KeyRound, LogOut, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { getDb, getSetting, setSetting } from "@/lib/db";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { getLastSyncAt, syncNow } from "@/lib/sync";
 import { seedDefaultProducts } from "@/lib/seed";
-import { pendingSyncCount } from "@/lib/repository";
+import { pendingSyncCount, resetAllStockToZero } from "@/lib/repository";
 import { formatDateTime } from "@/lib/utils";
 import InstallButton from "@/components/InstallButton";
 import { toast } from "@/components/Toaster";
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [nextSecret, setNextSecret] = useState("");
   const [repeatSecret, setRepeatSecret] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   const refresh = async () => {
     setLastSync(await getLastSyncAt());
@@ -125,6 +126,18 @@ export default function SettingsPage() {
     const added = await seedDefaultProducts();
     setSyncMessage(added ? `${added} products added.` : "Inventory already has products.");
     setBusy("");
+  };
+
+  const resetStock = async () => {
+    setConfirmReset(false);
+    const touched = await resetAllStockToZero();
+    toast(
+      touched
+        ? `Stock cleared on ${touched} product(s). Build it back up with Transfer In.`
+        : "Every product was already at zero.",
+      "success",
+    );
+    void refresh();
   };
 
   const clearLocal = async () => {
@@ -332,11 +345,42 @@ export default function SettingsPage() {
           <button onClick={loadSamples} disabled={busy === "seed"} className="btn-ghost">
             <Download size={16} /> Load default catalogue
           </button>
+          <button onClick={() => setConfirmReset(true)} className="btn-ghost">
+            <Boxes size={16} /> Reset all stock to zero
+          </button>
           <button onClick={() => setConfirmClear(true)} className="btn-ghost text-brand-700">
             <Trash2 size={16} /> Clear local data
           </button>
         </div>
       </section>
+
+      {confirmReset && (
+        <Modal
+          title="Reset all stock to zero?"
+          onClose={() => setConfirmReset(false)}
+          size="sm"
+          footer={
+            <>
+              <button onClick={() => setConfirmReset(false)} className="btn-ghost flex-1">
+                Cancel
+              </button>
+              <button onClick={() => void resetStock()} className="btn-primary flex-1">
+                Reset stock
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-ink-700/75">
+            Every product drops to <strong className="text-ink-900">0 in stock</strong>, so the shelf
+            can be rebuilt from what the warehouse actually sends through{" "}
+            <strong className="text-ink-900">Transfer In</strong>.
+          </p>
+          <p className="mt-2 text-sm text-ink-700/75">
+            Products, prices, sales and customers are untouched, and each change is recorded as a
+            stock movement so the history still adds up.
+          </p>
+        </Modal>
+      )}
 
       {confirmClear && (
         <Modal

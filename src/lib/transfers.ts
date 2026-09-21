@@ -115,6 +115,59 @@ export async function recordTransfer(input: TransferInput): Promise<Transfer> {
   return transfer;
 }
 
+export interface BulkTransferInput {
+  productIds: string[];
+  direction: TransferDirection;
+  quantity: number;
+  party?: string;
+  note?: string;
+  staffName?: string;
+}
+
+export interface BulkTransferResult {
+  recorded: Transfer[];
+  /** Products left alone because they did not hold enough to send out. */
+  skipped: Array<{ name: string; stockQty: number }>;
+}
+
+/**
+ * The same quantity in or out across many products at once, for the usual case
+ * of a delivery landing with a fixed count of everything. Products that cannot
+ * cover an outbound quantity are skipped and named, rather than failing the
+ * whole batch or quietly going negative.
+ */
+export async function recordBulkTransfer(input: BulkTransferInput): Promise<BulkTransferResult> {
+  const quantity = Math.trunc(Math.abs(input.quantity));
+  if (quantity <= 0) throw new Error("Enter how many units are moving");
+  if (input.productIds.length === 0) throw new Error("No products to transfer");
+
+  const recorded: Transfer[] = [];
+  const skipped: BulkTransferResult["skipped"] = [];
+
+  for (const productId of input.productIds) {
+    const product = await getDb().products.get(productId);
+    if (!product) continue;
+
+    if (input.direction === "out" && product.stockQty < quantity) {
+      skipped.push({ name: product.name, stockQty: product.stockQty });
+      continue;
+    }
+
+    recorded.push(
+      await recordTransfer({
+        productId,
+        direction: input.direction,
+        quantity,
+        party: input.party,
+        note: input.note,
+        staffName: input.staffName,
+      }),
+    );
+  }
+
+  return { recorded, skipped };
+}
+
 export interface TransferFilter {
   direction?: TransferDirection | "all";
   from?: Date;

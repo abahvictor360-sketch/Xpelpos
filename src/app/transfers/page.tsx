@@ -4,9 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowDownLeft, ArrowUpRight, Boxes, Search, Warehouse } from "lucide-react";
 import { db } from "@/lib/db";
-import { listTransfers, recordTransfer, summariseTransfers } from "@/lib/transfers";
+import {
+  listTransfers,
+  recordBulkTransfer,
+  recordTransfer,
+  summariseTransfers,
+} from "@/lib/transfers";
 import type { Product, Transfer, TransferDirection } from "@/lib/types";
 import { cx, formatDateTime, formatMoney } from "@/lib/utils";
+
+/** Dropdown value standing for "every product in the inventory". */
+const ALL_PRODUCTS = "__all__";
 
 type RangeKey = "today" | "week" | "month" | "all";
 
@@ -52,7 +60,9 @@ export default function TransfersPage() {
     [products],
   );
 
+  const everyProduct = productId === ALL_PRODUCTS;
   const selected = sorted.find((product) => product.id === productId);
+  const units = Math.trunc(Number(quantity) || 0);
 
   useEffect(() => {
     let active = true;
@@ -82,16 +92,36 @@ export default function TransfersPage() {
 
     setSaving(true);
     try {
-      const transfer = await recordTransfer({
-        productId,
-        direction,
-        quantity: Number(quantity),
-        party,
-        note,
-      });
-      setMessage(
-        `${transfer.reference}: ${transfer.productName} stock ${transfer.stockBefore} → ${transfer.stockAfter}`,
-      );
+      if (everyProduct) {
+        const { recorded, skipped } = await recordBulkTransfer({
+          productIds: sorted.map((product) => product.id),
+          direction,
+          quantity: Number(quantity),
+          party,
+          note,
+        });
+
+        const moved = `${units} unit(s) ${direction === "in" ? "into" : "out of"} ${recorded.length} product(s)`;
+        setMessage(
+          skipped.length === 0
+            ? `Recorded: ${moved}.`
+            : `Recorded: ${moved}. Skipped ${skipped.length} without enough stock: ${skipped
+                .map((row) => `${row.name} (${row.stockQty})`)
+                .join(", ")}.`,
+        );
+      } else {
+        const transfer = await recordTransfer({
+          productId,
+          direction,
+          quantity: Number(quantity),
+          party,
+          note,
+        });
+        setMessage(
+          `${transfer.reference}: ${transfer.productName} stock ${transfer.stockBefore} → ${transfer.stockAfter}`,
+        );
+      }
+
       setQuantity("");
       setNote("");
       setReloadKey((key) => key + 1);
@@ -150,6 +180,9 @@ export default function TransfersPage() {
               className="input mt-1"
             >
               <option value="">Choose a product…</option>
+              <option value={ALL_PRODUCTS}>
+                Every product ({sorted.length} in the inventory)
+              </option>
               {sorted.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name} ({product.stockQty} in stock)
@@ -171,15 +204,22 @@ export default function TransfersPage() {
             />
           </label>
 
-          {selected && quantity && Number(quantity) > 0 && (
+          {selected && units > 0 && (
             <p className="rounded-2xl bg-black/[0.03] px-3 py-2 text-xs text-ink-700/70">
               {selected.name}: {selected.stockQty} →{" "}
               <span className="font-bold text-ink-900">
-                {direction === "in"
-                  ? selected.stockQty + Math.trunc(Number(quantity))
-                  : selected.stockQty - Math.trunc(Number(quantity))}
+                {direction === "in" ? selected.stockQty + units : selected.stockQty - units}
               </span>{" "}
               in stock
+            </p>
+          )}
+
+          {everyProduct && units > 0 && (
+            <p className="rounded-2xl bg-black/[0.03] px-3 py-2 text-xs text-ink-700/70">
+              {units} unit(s) {direction === "in" ? "into" : "out of"} each of{" "}
+              <span className="font-bold text-ink-900">{sorted.length} products</span> —{" "}
+              {units * sorted.length} units in total, recorded one line per product.
+              {direction === "out" && " Products without enough stock are skipped."}
             </p>
           )}
 
@@ -207,7 +247,15 @@ export default function TransfersPage() {
           {message && <p className="text-xs font-semibold text-olive-700">{message}</p>}
 
           <button type="submit" disabled={saving} className="btn-primary w-full justify-center">
-            {saving ? "Saving…" : direction === "in" ? "Record stock in" : "Record stock out"}
+            {saving
+              ? "Saving…"
+              : everyProduct
+                ? direction === "in"
+                  ? `Record stock in for all ${sorted.length}`
+                  : `Record stock out for all ${sorted.length}`
+                : direction === "in"
+                  ? "Record stock in"
+                  : "Record stock out"}
           </button>
         </form>
       </section>

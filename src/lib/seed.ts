@@ -4,25 +4,28 @@ import { createProduct } from "./repository";
 import { getDb, getSetting, setSetting } from "./db";
 
 /**
- * The Xpel Beauty NG catalogue a new till starts with, taken from the shop's
- * own inventory. These are ordinary products once they land: rename, reprice,
- * restock or delete them like any other.
+ * The Xpel Beauty NG catalogue a new till starts with. Every line opens at zero
+ * stock: the shelf fills up through Transfer In, so what the till claims to
+ * hold is only ever what the warehouse actually sent it.
+ *
+ * These are ordinary products once they land: rename, reprice, restock or
+ * delete them like any other.
  */
 const DEFAULT_CATALOGUE = [
-  { name: "Aloe Vera Conditioner", sku: "XP-ALO-CON", category: "Hair care", price: 500, costPrice: 0, stockQty: 1200 },
-  { name: "Aloe Vera Shampoo", sku: "XP-ALO-SHP", category: "Hair care", price: 500, costPrice: 0, stockQty: 1200 },
-  { name: "Banana Scrub", sku: "XP-BAN-SCR", category: "Body care", price: 1000, costPrice: 0, stockQty: 1200 },
-  { name: "Osiris Recovery Oil", sku: "XP-OSI-OIL", category: "Hair care", price: 1000, costPrice: 0, stockQty: 1200 },
-  { name: "Rosemary Oil", sku: "XHC-ROS-OIL", category: "Hair care", price: 3800, costPrice: 0, stockQty: 2400 },
-  { name: "Vitamin C Face Mask", sku: "XBC-FM-VTC", category: "Face care", price: 1000, costPrice: 0, stockQty: 480 },
-  { name: "Papaya Face Mask", sku: "XBC-FM-PAP", category: "Face care", price: 1000, costPrice: 0, stockQty: 480 },
-  { name: "Tea Tree Face Mask", sku: "XBC-FM-TTR", category: "Face care", price: 1000, costPrice: 0, stockQty: 480 },
-  { name: "Charcoal Face Mask", sku: "XBC-FM-CHR", category: "Face care", price: 1000, costPrice: 0, stockQty: 480 },
-  { name: "Aloe Vera Face Mask", sku: "XBC-FM-ALO", category: "Face care", price: 1000, costPrice: 0, stockQty: 480 },
-  { name: "XHC Aloe Vera Leave-in Conditioner", sku: "XHC-LI-ALO", category: "Hair care", price: 1500, costPrice: 0, stockQty: 1200 },
-  { name: "XHC Argan Leave-in Conditioner", sku: "XHC-LI-ARG", category: "Hair care", price: 1000, costPrice: 0, stockQty: 1200 },
-  { name: "XHC Heat Defence", sku: "XHC-HD", category: "Hair care", price: 800, costPrice: 0, stockQty: 1200 },
-  { name: "XHC Rosemary Leave-in Conditioner", sku: "XHC-LI-ROS", category: "Hair care", price: 1500, costPrice: 0, stockQty: 1200 },
+  { name: "Aloe Vera Conditioner", sku: "XP-ALO-CON", category: "Hair care", price: 500, costPrice: 0, stockQty: 0 },
+  { name: "Aloe Vera Shampoo", sku: "XP-ALO-SHP", category: "Hair care", price: 500, costPrice: 0, stockQty: 0 },
+  { name: "Banana Scrub", sku: "XP-BAN-SCR", category: "Body care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Osiris Recovery Oil", sku: "XP-OSI-OIL", category: "Hair care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Rosemary Oil", sku: "XHC-ROS-OIL", category: "Hair care", price: 3800, costPrice: 0, stockQty: 0 },
+  { name: "Vitamin C Face Mask", sku: "XBC-FM-VTC", category: "Face care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Papaya Face Mask", sku: "XBC-FM-PAP", category: "Face care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Tea Tree Face Mask", sku: "XBC-FM-TTR", category: "Face care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Charcoal Face Mask", sku: "XBC-FM-CHR", category: "Face care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "Aloe Vera Face Mask", sku: "XBC-FM-ALO", category: "Face care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "XHC Aloe Vera Leave-in Conditioner", sku: "XHC-LI-ALO", category: "Hair care", price: 1500, costPrice: 0, stockQty: 0 },
+  { name: "XHC Argan Leave-in Conditioner", sku: "XHC-LI-ARG", category: "Hair care", price: 1000, costPrice: 0, stockQty: 0 },
+  { name: "XHC Heat Defence", sku: "XHC-HD", category: "Hair care", price: 800, costPrice: 0, stockQty: 0 },
+  { name: "XHC Rosemary Leave-in Conditioner", sku: "XHC-LI-ROS", category: "Hair care", price: 1500, costPrice: 0, stockQty: 0 },
 ];
 
 /** Marks that this till has already been given its opening catalogue. */

@@ -124,6 +124,45 @@ export async function updateProduct(id: string, patch: Partial<ProductInput> & {
   });
 }
 
+/**
+ * Takes every product down to zero stock, so the shelf can be rebuilt from
+ * Transfer In rather than from numbers nobody counted. Each product gets a
+ * stock movement for the amount removed, so the history still explains where
+ * the units went.
+ */
+export async function resetAllStockToZero(): Promise<number> {
+  const dbi = getDb();
+  const products = await dbi.products.filter((product) => !product.deletedAt).toArray();
+  const carrying = products.filter((product) => product.stockQty !== 0);
+  if (carrying.length === 0) return 0;
+
+  const now = new Date().toISOString();
+
+  await dbi.transaction("rw", dbi.products, dbi.stockMovements, async () => {
+    for (const product of carrying) {
+      await dbi.products.put({ ...product, stockQty: 0, updatedAt: now, syncState: "pending" });
+      await dbi.stockMovements.add({
+        id: newId(),
+        productId: product.id,
+        changeQty: -product.stockQty,
+        reason: "adjustment",
+        referenceId: null,
+        note: "Stock reset to zero",
+        createdAt: now,
+        syncState: "pending",
+      });
+    }
+  });
+
+  await logActivity({
+    kind: "stock",
+    message: `Reset stock to zero on ${carrying.length} product(s)`,
+    detail: `${carrying.reduce((sum, product) => sum + product.stockQty, 0)} unit(s) cleared, ready to rebuild from transfers`,
+  });
+
+  return carrying.length;
+}
+
 /** Restock adds to the existing quantity instead of replacing it. */
 export async function restockProduct(id: string, quantity: number, note = "Restock"): Promise<void> {
   const existing = await getDb().products.get(id);
