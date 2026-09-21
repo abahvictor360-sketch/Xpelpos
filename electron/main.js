@@ -6,6 +6,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
+const { startUpdateChecks, checkWithFeedback } = require("./updater");
 
 const ROOT = path.join(__dirname, "..", "out");
 
@@ -101,7 +102,10 @@ async function createWindow() {
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    win.show();
+    startUpdateChecks();
+  });
   win.loadURL(`http://127.0.0.1:${port}/`);
 
   // Ask the OS never to evict the till's data under disk pressure.
@@ -127,6 +131,11 @@ Menu.setApplicationMenu(
     {
       label: "File",
       submenu: [
+        {
+          label: "Check for updates",
+          click: () => checkWithFeedback(BrowserWindow.getFocusedWindow()),
+        },
+        { type: "separator" },
         {
           label: "Open data folder",
           click: () => shell.openPath(app.getPath("userData")),

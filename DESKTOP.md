@@ -57,6 +57,29 @@ Supabase sync stays optional. With no network, the till keeps selling from the
 local database; when sync is configured and the connection returns, records
 upload in the background.
 
+## Updates
+
+Installed copies update themselves. The app reads the GitHub release feed for
+this repository, downloads a newer build in the background, and installs it when
+the till is closed, so a sale is never interrupted. `File > Check for updates`
+forces a check and offers an immediate restart.
+
+Shipping a new version takes three steps:
+
+1. Bump `version` in `package.json`.
+2. `npm run dist`.
+3. Create a GitHub release tagged `v<version>` and attach **all three** files
+   from `release/`: the installer, the portable build, and `latest.yml`.
+
+`latest.yml` is the feed — without it, installed tills have no way to learn that
+a new version exists. The installer filename must stay exactly as
+electron-builder writes it, since the feed refers to it by name.
+
+Only the installed (NSIS) build updates itself. The portable exe is a single
+file with nowhere to install to, so it has to be re-downloaded by hand.
+
+Offline tills simply skip the check and try again later.
+
 ## The download page
 
 `/download` is the public landing page where staff get the Windows build. Its
