@@ -5,7 +5,7 @@ import { CheckCircle2, Download, KeyRound, LogOut, RefreshCw, Smartphone, Trash2
 import { getDb, getSetting, setSetting } from "@/lib/db";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { getLastSyncAt, syncNow } from "@/lib/sync";
-import { seedSampleProducts } from "@/lib/seed";
+import { seedDefaultProducts } from "@/lib/seed";
 import { pendingSyncCount } from "@/lib/repository";
 import { formatDateTime } from "@/lib/utils";
 import InstallButton from "@/components/InstallButton";
@@ -122,8 +122,8 @@ export default function SettingsPage() {
 
   const loadSamples = async () => {
     setBusy("seed");
-    const added = await seedSampleProducts();
-    setSyncMessage(added ? `${added} sample products added.` : "Inventory already has products.");
+    const added = await seedDefaultProducts();
+    setSyncMessage(added ? `${added} products added.` : "Inventory already has products.");
     setBusy("");
   };
 
@@ -330,7 +330,7 @@ export default function SettingsPage() {
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button onClick={loadSamples} disabled={busy === "seed"} className="btn-ghost">
-            <Download size={16} /> Load sample products
+            <Download size={16} /> Load default catalogue
           </button>
           <button onClick={() => setConfirmClear(true)} className="btn-ghost text-brand-700">
             <Trash2 size={16} /> Clear local data

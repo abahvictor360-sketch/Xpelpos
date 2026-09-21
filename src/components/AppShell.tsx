@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "@/lib/utils";
+import { seedOnFirstRun } from "@/lib/seed";
 import SyncBadge from "./SyncBadge";
 import InstallButton from "./InstallButton";
 import Toaster from "./Toaster";
@@ -78,6 +79,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    // A fresh install opens with the shop's catalogue already in place.
+    void seedOnFirstRun();
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
