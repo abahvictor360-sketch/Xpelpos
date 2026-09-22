@@ -11,6 +11,10 @@ export interface TransferInput {
   quantity: number;
   /** Who the stock came from or went to, usually the warehouse. */
   party?: string;
+  /** The person handing the stock over. Required, so a movement always has an owner. */
+  releasedBy?: string;
+  /** The person taking delivery of it. */
+  receivedBy?: string;
   note?: string;
   staffName?: string;
 }
@@ -60,6 +64,13 @@ export async function recordTransfer(input: TransferInput): Promise<Transfer> {
   const staffName =
     input.staffName?.trim() || (await getSetting("cashier_name", "Counter")) || "Counter";
 
+  // Stock never moves anonymously: one person hands it over, another takes it.
+  // On the way in the till receives; on the way out the till releases.
+  const releasedBy = input.releasedBy?.trim() || (input.direction === "out" ? staffName : "");
+  const receivedBy = input.receivedBy?.trim() || (input.direction === "in" ? staffName : "");
+  if (!releasedBy) throw new Error("Enter who released the stock");
+  if (!receivedBy) throw new Error("Enter who received the stock");
+
   const transfer: Transfer = {
     id: newId(),
     reference: await buildReference(input.direction, now),
@@ -71,6 +82,8 @@ export async function recordTransfer(input: TransferInput): Promise<Transfer> {
     stockBefore: product.stockQty,
     stockAfter,
     party: (input.party ?? "Warehouse").trim() || "Warehouse",
+    releasedBy,
+    receivedBy,
     note: (input.note ?? "").trim(),
     staffName,
     createdAt: nowIso,
@@ -93,7 +106,7 @@ export async function recordTransfer(input: TransferInput): Promise<Transfer> {
       changeQty: delta,
       reason: input.direction === "in" ? "transfer-in" : "transfer-out",
       referenceId: transfer.id,
-      note: `${transfer.reference} · ${transfer.party}`,
+      note: `${transfer.reference} · ${transfer.party} · ${releasedBy} → ${receivedBy}`,
       createdAt: nowIso,
       syncState: "pending",
     });
@@ -107,7 +120,7 @@ export async function recordTransfer(input: TransferInput): Promise<Transfer> {
       input.direction === "in"
         ? `Received ${quantity} × ${product.name}`
         : `Sent out ${quantity} × ${product.name}`,
-    detail: `${transfer.reference} · ${transfer.party} · stock ${transfer.stockBefore} → ${transfer.stockAfter}`,
+    detail: `${transfer.reference} · ${transfer.party} · released by ${releasedBy}, received by ${receivedBy} · stock ${transfer.stockBefore} → ${transfer.stockAfter}`,
     referenceId: transfer.id,
     staffName,
   });
@@ -120,6 +133,8 @@ export interface BulkTransferInput {
   direction: TransferDirection;
   quantity: number;
   party?: string;
+  releasedBy?: string;
+  receivedBy?: string;
   note?: string;
   staffName?: string;
 }
@@ -159,6 +174,8 @@ export async function recordBulkTransfer(input: BulkTransferInput): Promise<Bulk
         direction: input.direction,
         quantity,
         party: input.party,
+        releasedBy: input.releasedBy,
+        receivedBy: input.receivedBy,
         note: input.note,
         staffName: input.staffName,
       }),

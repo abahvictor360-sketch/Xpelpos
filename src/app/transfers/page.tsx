@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowDownLeft, ArrowUpRight, Boxes, Search, Warehouse } from "lucide-react";
-import { db } from "@/lib/db";
+import { db, getSetting } from "@/lib/db";
 import {
   listTransfers,
   recordBulkTransfer,
@@ -44,10 +44,14 @@ export default function TransfersPage() {
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [party, setParty] = useState("Warehouse");
+  const [releasedBy, setReleasedBy] = useState("");
+  const [receivedBy, setReceivedBy] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [cashier, setCashier] = useState("Counter");
 
   const [range, setRange] = useState<RangeKey>("week");
   const [filterDirection, setFilterDirection] = useState<TransferDirection | "all">("all");
@@ -63,6 +67,10 @@ export default function TransfersPage() {
   const everyProduct = productId === ALL_PRODUCTS;
   const selected = sorted.find((product) => product.id === productId);
   const units = Math.trunc(Number(quantity) || 0);
+
+  useEffect(() => {
+    void getSetting("cashier_name", "Counter").then((name) => setCashier(name || "Counter"));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -98,6 +106,8 @@ export default function TransfersPage() {
           direction,
           quantity: Number(quantity),
           party,
+          releasedBy,
+          receivedBy,
           note,
         });
 
@@ -115,6 +125,8 @@ export default function TransfersPage() {
           direction,
           quantity: Number(quantity),
           party,
+          releasedBy,
+          receivedBy,
           note,
         });
         setMessage(
@@ -124,6 +136,8 @@ export default function TransfersPage() {
 
       setQuantity("");
       setNote("");
+      setReleasedBy("");
+      setReceivedBy("");
       setReloadKey((key) => key + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not record that transfer");
@@ -232,6 +246,35 @@ export default function TransfersPage() {
               className="input mt-1"
             />
           </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="label">
+                Released by {direction === "in" ? "(warehouse)" : "(this shop)"}
+              </span>
+              <input
+                value={releasedBy}
+                onChange={(event) => setReleasedBy(event.target.value)}
+                placeholder={direction === "in" ? "Who handed it over" : cashier}
+                className="input mt-1"
+              />
+            </label>
+            <label className="block">
+              <span className="label">
+                Received by {direction === "in" ? "(this shop)" : "(collector)"}
+              </span>
+              <input
+                value={receivedBy}
+                onChange={(event) => setReceivedBy(event.target.value)}
+                placeholder={direction === "in" ? cashier : "Who collected it"}
+                className="input mt-1"
+              />
+            </label>
+          </div>
+          <p className="-mt-1 text-[11px] text-ink-700/55">
+            Both names are recorded on the transfer, so every movement says who released the stock and
+            who took delivery. Blank falls back to {cashier} on this till&apos;s side.
+          </p>
 
           <label className="block">
             <span className="label">Note (optional)</span>
@@ -348,6 +391,7 @@ export default function TransfersPage() {
                     <th className="py-2 pr-3 text-right font-semibold">Units</th>
                     <th className="py-2 pr-3 text-right font-semibold">Stock after</th>
                     <th className="py-2 pr-3 font-semibold">Party</th>
+                    <th className="py-2 pr-3 font-semibold">Released by → Received by</th>
                     <th className="py-2 font-semibold">When</th>
                   </tr>
                 </thead>
@@ -391,9 +435,15 @@ export default function TransfersPage() {
                           <span className="block text-[11px] text-ink-700/50">{row.note}</span>
                         )}
                       </td>
-                      <td className="py-2.5 text-[11px] text-ink-700/55">
+                      <td className="py-2.5 pr-3 text-ink-700/75">
+                        <span className="block whitespace-nowrap">
+                          {row.releasedBy || "—"}{" "}
+                          <span className="text-ink-700/40">→</span> {row.receivedBy || "—"}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap py-2.5 text-[11px] text-ink-700/55">
                         {formatDateTime(row.createdAt)}
-                        <span className="block">by {row.staffName}</span>
+                        <span className="block">recorded by {row.staffName}</span>
                       </td>
                     </tr>
                   ))}

@@ -151,6 +151,10 @@ export interface Transfer {
   stockBefore: number;
   stockAfter: number;
   party: string;
+  /** Who handed the stock over — warehouse staff on the way in, till staff on the way out. */
+  releasedBy: string;
+  /** Who took delivery of it — till staff on the way in, the collector on the way out. */
+  receivedBy: string;
   note: string;
   staffName: string;
   createdAt: string;

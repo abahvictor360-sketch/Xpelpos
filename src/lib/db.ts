@@ -72,6 +72,24 @@ class XpelPosDatabase extends Dexie {
             if (!customer.code) customer.code = customerCodeFor(String(customer.id ?? ""));
           });
       });
+
+    this.version(4).upgrade(async (tx) => {
+      // Transfers recorded before both names were captured: the till person is
+      // known from staffName, and the other side was only ever the party.
+      await tx
+        .table("transfers")
+        .toCollection()
+        .modify((transfer: Record<string, unknown>) => {
+          const staff = String(transfer.staffName ?? "");
+          const party = String(transfer.party ?? "");
+          if (transfer.releasedBy === undefined) {
+            transfer.releasedBy = transfer.direction === "in" ? party : staff;
+          }
+          if (transfer.receivedBy === undefined) {
+            transfer.receivedBy = transfer.direction === "in" ? staff : party;
+          }
+        });
+    });
   }
 }
 
