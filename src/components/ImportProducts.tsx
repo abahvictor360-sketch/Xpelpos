@@ -18,6 +18,7 @@ export default function ImportProducts({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [updateExisting, setUpdateExisting] = useState(true);
   const [addToStock, setAddToStock] = useState(false);
+  const [hasQuantityColumn, setHasQuantityColumn] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const valid = rows?.filter((row) => !row.error) ?? [];
@@ -31,6 +32,7 @@ export default function ImportProducts({ onClose }: { onClose: () => void }) {
     setFileName(file.name);
     try {
       const result = await parseProductFile(file);
+      setHasQuantityColumn(result.hasQuantityColumn);
       if (result.rows.length === 0) {
         toast("That file has no rows the importer could read.", "error");
         setRows(null);
@@ -47,7 +49,7 @@ export default function ImportProducts({ onClose }: { onClose: () => void }) {
   const runImport = async () => {
     if (!rows) return;
     setBusy(true);
-    const summary = await importProducts(rows, { updateExisting, addToStock });
+    const summary = await importProducts(rows, { updateExisting, addToStock, hasQuantityColumn });
     setBusy(false);
     toast(
       `${summary.created} added, ${summary.updated} updated, ${summary.skipped} skipped.`,
@@ -155,6 +157,13 @@ export default function ImportProducts({ onClose }: { onClose: () => void }) {
             </table>
           </div>
 
+          {!hasQuantityColumn && (
+            <p className="rounded-xl bg-[#fdf3e0] px-3 py-2 text-sm text-brand-700">
+              This sheet has no quantity column, so current stock levels are left untouched. Only prices
+              and details will be updated.
+            </p>
+          )}
+
           <div className="space-y-2 rounded-xl bg-black/[0.03] p-3 text-sm">
             <label className="flex items-center gap-2">
               <input
@@ -165,11 +174,16 @@ export default function ImportProducts({ onClose }: { onClose: () => void }) {
               />
               Update products that already exist (matched on SKU, else name)
             </label>
-            <label className={cx("flex items-center gap-2", !updateExisting && "opacity-50")}>
+            <label
+              className={cx(
+                "flex items-center gap-2",
+                (!updateExisting || !hasQuantityColumn) && "opacity-50",
+              )}
+            >
               <input
                 type="checkbox"
                 checked={addToStock}
-                disabled={!updateExisting}
+                disabled={!updateExisting || !hasQuantityColumn}
                 onChange={(event) => setAddToStock(event.target.checked)}
                 className="h-4 w-4 accent-[#cf6d1e]"
               />

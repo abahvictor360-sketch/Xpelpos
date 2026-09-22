@@ -321,8 +321,15 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
       lowStockThreshold: Number(form.lowStockThreshold) || 5,
       barcode: form.barcode,
     };
-    if (product) await updateProduct(product.id, payload);
-    else await createProduct(payload);
+    try {
+      if (product) await updateProduct(product.id, payload);
+      else await createProduct(payload);
+    } catch (saveError) {
+      // A clashing SKU lands here — show it in the form rather than failing silently.
+      setError(saveError instanceof Error ? saveError.message : "Could not save that product.");
+      setBusy(false);
+      return;
+    }
     setBusy(false);
     onClose();
   };

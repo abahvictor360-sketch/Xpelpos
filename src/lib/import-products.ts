@@ -61,12 +61,14 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export async function parseProductFile(file: File): Promise<{ rows: ParsedRow[]; headers: string[] }> {
+export async function parseProductFile(
+  file: File,
+): Promise<{ rows: ParsedRow[]; headers: string[]; hasQuantityColumn: boolean }> {
   const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return { rows: [], headers: [] };
+  if (!sheet) return { rows: [], headers: [], hasQuantityColumn: false };
 
   const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
   const headers = raw.length ? Object.keys(raw[0]) : [];
@@ -116,14 +118,16 @@ export async function parseProductFile(file: File): Promise<{ rows: ParsedRow[];
     }
     seen.add(key);
 
-    const match = sku ? bySku.get(sku.toUpperCase()) : byName.get(name.toLowerCase());
+    // Match on SKU first, then name, so a re-import updates rather than duplicates.
+    const match =
+      (sku ? bySku.get(sku.toUpperCase()) : undefined) ?? byName.get(name.toLowerCase());
     if (match) {
       return { ...parsed, action: "update", existingId: match.id };
     }
     return parsed;
   });
 
-  return { rows, headers };
+  return { rows, headers, hasQuantityColumn: columns.stockQty !== undefined };
 }
 
 export interface ImportOptions {
@@ -131,6 +135,11 @@ export interface ImportOptions {
   updateExisting: boolean;
   /** When true, an update adds the sheet quantity to stock instead of replacing it. */
   addToStock: boolean;
+  /**
+   * False when the sheet has no quantity column at all. Stock is then left
+   * exactly as it is — a price-list import must never wipe counted stock.
+   */
+  hasQuantityColumn: boolean;
 }
 
 export async function importProducts(
@@ -160,7 +169,14 @@ export async function importProducts(
         costPrice: row.costPrice,
         barcode: row.barcode,
         lowStockThreshold: row.lowStockThreshold,
-        stockQty: options.addToStock ? (current?.stockQty ?? 0) + row.stockQty : row.stockQty,
+        // No quantity column means the sheet says nothing about stock, so keep what is counted.
+        ...(options.hasQuantityColumn
+          ? {
+              stockQty: options.addToStock
+                ? (current?.stockQty ?? 0) + row.stockQty
+                : row.stockQty,
+            }
+          : {}),
       });
       summary.updated += 1;
       continue;

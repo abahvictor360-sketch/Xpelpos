@@ -41,6 +41,19 @@ export interface ProductInput {
 
 export async function createProduct(input: ProductInput): Promise<Product> {
   const now = new Date().toISOString();
+
+  // A SKU identifies one product; a second row under the same code is the
+  // duplicate that makes a catalogue unusable, so refuse it up front.
+  const sku = (input.sku ?? "").trim();
+  if (sku) {
+    const clash = await getDb()
+      .products.filter((p) => !p.deletedAt && p.sku.trim().toUpperCase() === sku.toUpperCase())
+      .first();
+    if (clash) {
+      throw new Error(`${clash.name} already uses the code ${clash.sku}. Edit that product instead.`);
+    }
+  }
+
   const product: Product = {
     id: newId(),
     sku: (input.sku ?? "").trim(),
