@@ -2,7 +2,10 @@
 
 import { getDb, getSetting, setSetting } from "./db";
 import { deleteRemoteProduct } from "./sync";
+import { logActivity } from "./activity";
 import type {
+  Activity,
+  ActivityKind,
   CartLine,
   Coupon,
   Customer,
@@ -13,8 +16,10 @@ import type {
   SaleItem,
   Shift,
   StockMovement,
+  Transfer,
+  TransferDirection,
 } from "./types";
-import { buildReceiptNo, formatDate, newId, round2 } from "./utils";
+import { buildReceiptNo, customerCodeFor, formatDate, newId, round2 } from "./utils";
 
 const DEVICE_KEY = "device_id";
 
@@ -130,6 +135,45 @@ export async function updateProduct(id: string, patch: Partial<ProductInput> & {
     }
     await getDb().products.put(next);
   });
+}
+
+/**
+ * Takes every product down to zero stock, so the shelf can be rebuilt from
+ * Transfer In rather than from numbers nobody counted. Each product gets a
+ * stock movement for the amount removed, so the history still explains where
+ * the units went.
+ */
+export async function resetAllStockToZero(): Promise<number> {
+  const dbi = getDb();
+  const products = await dbi.products.filter((product) => !product.deletedAt).toArray();
+  const carrying = products.filter((product) => product.stockQty !== 0);
+  if (carrying.length === 0) return 0;
+
+  const now = new Date().toISOString();
+
+  await dbi.transaction("rw", dbi.products, dbi.stockMovements, async () => {
+    for (const product of carrying) {
+      await dbi.products.put({ ...product, stockQty: 0, updatedAt: now, syncState: "pending" });
+      await dbi.stockMovements.add({
+        id: newId(),
+        productId: product.id,
+        changeQty: -product.stockQty,
+        reason: "adjustment",
+        referenceId: null,
+        note: "Stock reset to zero",
+        createdAt: now,
+        syncState: "pending",
+      });
+    }
+  });
+
+  await logActivity({
+    kind: "stock",
+    message: `Reset stock to zero on ${carrying.length} product(s)`,
+    detail: `${carrying.reduce((sum, product) => sum + product.stockQty, 0)} unit(s) cleared, ready to rebuild from transfers`,
+  });
+
+  return carrying.length;
 }
 
 /** Restock adds to the existing quantity instead of replacing it. */
@@ -275,6 +319,13 @@ export function cartTotals(lines: CartLine[], discount = 0, vatRate = 0) {
   return { subtotal, tax, total, itemCount };
 }
 
+/** How many sales this till has already rung up today, so the next one follows on. */
+async function nextReceiptSequence(now: Date): Promise<number> {
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const taken = await getDb().sales.where("soldAt").aboveOrEqual(dayStart).count();
+  return taken + 1;
+}
+
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   if (input.lines.length === 0) throw new Error("Cart is empty");
 
@@ -287,7 +338,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
 
   const sale: Sale = {
     id: newId(),
-    receiptNo: buildReceiptNo(deviceId, now),
+    receiptNo: buildReceiptNo(deviceId, await nextReceiptSequence(now), now),
     soldAt: nowIso,
     subtotal,
     discount,
@@ -376,6 +427,19 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     },
   );
 
+  await logActivity({
+    kind: "sale",
+    message: `Sale ${sale.receiptNo}`,
+    detail: [
+      `${items.reduce((sum, item) => sum + item.quantity, 0)} item(s)`,
+      sale.paymentMethod,
+      sale.customerName || "Walk-in",
+    ].join(" · "),
+    amount: sale.total,
+    referenceId: sale.id,
+    staffName: sale.cashierName,
+  });
+
   return { sale, items };
 }
 
@@ -424,6 +488,14 @@ export async function voidSale(saleId: string): Promise<void> {
         syncState: "pending",
       });
     }
+  });
+
+  await logActivity({
+    kind: "void",
+    message: `Voided sale ${sale.receiptNo}`,
+    detail: "Stock returned to the shelf",
+    amount: sale.total,
+    referenceId: sale.id,
   });
 }
 
@@ -584,9 +656,11 @@ export async function saveCustomer(input: CustomerInput, id?: string): Promise<C
   const dbi = getDb();
   const now = new Date().toISOString();
   const existing = id ? await dbi.customers.get(id) : undefined;
+  const customerId = existing?.id ?? newId();
 
   const customer: Customer = {
-    id: existing?.id ?? newId(),
+    id: customerId,
+    code: existing?.code || customerCodeFor(existing?.id ?? customerId),
     name: input.name.trim(),
     phone: (input.phone ?? "").trim(),
     email: (input.email ?? "").trim(),
@@ -598,6 +672,14 @@ export async function saveCustomer(input: CustomerInput, id?: string): Promise<C
   };
 
   await dbi.customers.put(customer);
+
+  await logActivity({
+    kind: "customer",
+    message: existing ? `Updated customer ${customer.name}` : `Added customer ${customer.name}`,
+    detail: [customer.code, customer.phone].filter(Boolean).join(" · "),
+    referenceId: customer.id,
+  });
+
   return customer;
 }
 
@@ -612,7 +694,7 @@ export async function searchCustomers(term: string, limit = 8): Promise<Customer
   const query = term.trim().toLowerCase();
   const all = await getDb().customers.filter((c) => !c.deletedAt).toArray();
   const rows = query
-    ? all.filter((c) => [c.name, c.phone, c.email].join(" ").toLowerCase().includes(query))
+    ? all.filter((c) => [c.name, c.phone, c.email, c.code].join(" ").toLowerCase().includes(query))
     : all;
   return rows.sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit);
 }

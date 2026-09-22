@@ -1,7 +1,9 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
+import { customerCodeFor } from "./utils";
 import type {
+  Activity,
   AppSetting,
   Coupon,
   Customer,
@@ -11,6 +13,7 @@ import type {
   SaleItem,
   Shift,
   StockMovement,
+  Transfer,
 } from "./types";
 
 class XpelPosDatabase extends Dexie {
@@ -23,6 +26,8 @@ class XpelPosDatabase extends Dexie {
   customers!: Table<Customer, string>;
   shifts!: Table<Shift, string>;
   heldSales!: Table<HeldSale, string>;
+  transfers!: Table<Transfer, string>;
+  activities!: Table<Activity, string>;
 
   constructor() {
     super("xpel-pos");
@@ -50,6 +55,21 @@ class XpelPosDatabase extends Dexie {
             sale.couponCode ??= "";
             sale.customerId ??= null;
             sale.shiftId ??= null;
+          });
+      });
+
+    this.version(3)
+      .stores({
+        transfers: "id, direction, productId, createdAt, updatedAt, syncState, deletedAt",
+        activities: "id, kind, createdAt, syncState",
+      })
+      .upgrade(async (tx) => {
+        // Customers predating codes get one, so same-named people stay apart.
+        await tx
+          .table("customers")
+          .toCollection()
+          .modify((customer: Record<string, unknown>) => {
+            if (!customer.code) customer.code = customerCodeFor(String(customer.id ?? ""));
           });
       });
   }

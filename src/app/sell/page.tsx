@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import ProductSearch from "@/components/ProductSearch";
+import CustomerPicker from "@/components/CustomerPicker";
 import Receipt from "@/components/Receipt";
 import {
   applyCoupon,
@@ -25,14 +26,14 @@ import {
   getOpenShift,
   holdSale,
   resumeHeldSale,
-  upsertCustomerByPhone,
+  searchCustomers,
 } from "@/lib/repository";
 import { db } from "@/lib/db";
 import { getSetting } from "@/lib/db";
 import { useStoreProfile } from "@/lib/store-profile";
 import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
-import type { CartLine, Coupon, HeldSale, PaymentMethod, Product, Sale, SaleItem, Shift } from "@/lib/types";
+import type { CartLine, Coupon, Customer, HeldSale, PaymentMethod, Product, Sale, SaleItem, Shift } from "@/lib/types";
 import { cx, formatMoney, round2 } from "@/lib/utils";
 
 const METHODS: Array<{ id: PaymentMethod; label: string; icon: React.ElementType }> = [
@@ -46,8 +47,7 @@ export default function SellPage() {
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [discount, setDiscount] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [promoInput, setPromoInput] = useState("");
   const [promo, setPromo] = useState<{ coupon: Coupon; discount: number } | null>(null);
   const [promoError, setPromoError] = useState("");
@@ -153,8 +153,7 @@ export default function SellPage() {
     setLines([]);
     setDiscount("");
     setAmountPaid("");
-    setCustomerName("");
-    setCustomerPhone("");
+    setCustomer(null);
     setPromo(null);
     setPromoInput("");
     setPromoError("");
@@ -175,7 +174,7 @@ export default function SellPage() {
 
   const parkSale = async () => {
     if (lines.length === 0) return;
-    await holdSale(lines, customerName || `Held ${new Date().toLocaleTimeString()}`, customerName);
+    await holdSale(lines, customer?.name || `Held ${new Date().toLocaleTimeString()}`, customer?.name ?? "");
     clearCart();
     toast("Sale parked — resume it from the Held sales list.", "success");
   };
@@ -184,7 +183,10 @@ export default function SellPage() {
     const restored = await resumeHeldSale(id);
     if (!restored) return;
     setLines(restored.lines);
-    setCustomerName(restored.customerName);
+    void (async () => {
+      const [match] = restored.customerName ? await searchCustomers(restored.customerName, 1) : [];
+      setCustomer(match ?? null);
+    })();
     toast("Held sale resumed.", "success");
   };
 
@@ -199,15 +201,14 @@ export default function SellPage() {
     }
     setBusy(true);
     try {
-      const customer = await upsertCustomerByPhone(customerName, customerPhone);
       const result = await checkout({
         lines,
         paymentMethod: method,
         discount: discountValue,
         vatRate: store.vatRate,
         amountPaid: paid,
-        customerName,
-        customerPhone,
+        customerName: customer?.name ?? "",
+        customerPhone: customer?.phone ?? "",
         cashierName,
         couponCode: promo?.coupon.code ?? "",
         customerId: customer?.id ?? null,
@@ -353,6 +354,29 @@ export default function SellPage() {
           )}
         </div>
 
+        {lines.length > 0 && (
+          <>
+            {/* What is being paid for, so the cashier can read it back to the
+                customer without looking away from the checkout panel. */}
+            <ul className="mt-3 max-h-56 space-y-1.5 overflow-y-auto pr-1 text-sm">
+              {lines.map((line) => (
+                <li key={line.productId} className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 text-ink-700/75">
+                    <span className="block truncate text-ink-900">{line.name}</span>
+                    <span className="tabular text-xs text-ink-700/50">
+                      {line.quantity} × {formatMoney(line.unitPrice)}
+                    </span>
+                  </span>
+                  <span className="tabular shrink-0 font-medium text-ink-900">
+                    {formatMoney(line.unitPrice * line.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 border-t border-dashed border-black/10" />
+          </>
+        )}
+
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between text-ink-700/75">
             <dt>Subtotal</dt>
@@ -460,28 +484,8 @@ export default function SellPage() {
           {promoError && <p className="mt-1.5 text-xs font-medium text-brand-700">{promoError}</p>}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="customer">Customer</label>
-            <input
-              id="customer"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-              className="input"
-              placeholder="Walk-in"
-            />
-          </div>
-          <div>
-            <label className="label" htmlFor="customer-phone">Phone</label>
-            <input
-              id="customer-phone"
-              value={customerPhone}
-              onChange={(event) => setCustomerPhone(event.target.value)}
-              className="input"
-              inputMode="tel"
-              placeholder="Optional"
-            />
-          </div>
+        <div className="mt-4">
+          <CustomerPicker selected={customer} onSelect={setCustomer} />
         </div>
 
         {method === "cash" && change > 0 && (

@@ -77,10 +77,32 @@ export default function CustomersPage() {
 
         {rows.length === 0 ? (
           <div className="px-4 py-14 text-center">
-            <p className="text-sm font-medium text-ink-900">No customers yet</p>
-            <p className="mt-1 text-sm text-ink-700/55">
-              Enter a phone number at checkout and the customer is saved here automatically.
-            </p>
+            {term.trim() ? (
+              <>
+                <p className="text-sm font-medium text-ink-900">
+                  No customer matches &ldquo;{term.trim()}&rdquo;
+                </p>
+                <p className="mt-1 text-sm text-ink-700/55">
+                  Add them now and the name is filled in for you.
+                </p>
+                <button
+                  onClick={() => {
+                    setEditing(null);
+                    setShowForm(true);
+                  }}
+                  className="btn-primary mt-4"
+                >
+                  <Plus size={16} /> Add &ldquo;{term.trim()}&rdquo;
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-ink-900">No customers yet</p>
+                <p className="mt-1 text-sm text-ink-700/55">
+                  Pick or add a customer at checkout and they are saved here automatically.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -105,9 +127,10 @@ export default function CustomersPage() {
                       >
                         {customer.name}
                       </button>
-                      {customer.email && (
-                        <span className="block text-xs text-ink-700/50">{customer.email}</span>
-                      )}
+                      <span className="block text-xs text-ink-700/50">
+                        {customer.code}
+                        {customer.email ? ` · ${customer.email}` : ""}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-ink-700/70">{customer.phone || "—"}</td>
                     <td className="tabular whitespace-nowrap px-4 py-3 text-right">{visits}</td>
@@ -148,6 +171,7 @@ export default function CustomersPage() {
       {showForm && (
         <CustomerForm
           customer={editing}
+          presetName={editing ? undefined : term.trim()}
           onClose={() => {
             setShowForm(false);
             setEditing(null);
@@ -175,9 +199,17 @@ function Tile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CustomerForm({ customer, onClose }: { customer: Customer | null; onClose: () => void }) {
+function CustomerForm({
+  customer,
+  presetName,
+  onClose,
+}: {
+  customer: Customer | null;
+  presetName?: string;
+  onClose: () => void;
+}) {
   const [form, setForm] = useState({
-    name: customer?.name ?? "",
+    name: customer?.name ?? presetName ?? "",
     phone: customer?.phone ?? "",
     email: customer?.email ?? "",
     note: customer?.note ?? "",

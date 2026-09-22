@@ -1,12 +1,15 @@
 {
   "name": "xpel-pos",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "export:desktop": "node scripts/build-desktop.mjs",
+    "electron": "npm run export:desktop && electron .",
+    "dist": "npm run export:desktop && electron-builder --win"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -24,16 +27,91 @@
     "react-dom": "^19.3.0",
     "recharts": "^2.13.3",
     "uuid": "^11.0.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "^20.17.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.20",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
     "playwright-core": "^1.63.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3"
+  },
+  "main": "electron/main.js",
+  "description": "Offline-first point of sale, inventory and sales analytics for Xpel Beauty NG.",
+  "author": {
+    "name": "Xpel Beauty NG"
+  },
+  "build": {
+    "appId": "ng.xpelbeauty.pos",
+    "productName": "Xpel POS",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "out/**/*",
+      "public/icons/**/*",
+      "package.json",
+      "!node_modules/**/*",
+      "node_modules/argparse/**/*",
+      "node_modules/builder-util-runtime/**/*",
+      "node_modules/debug/**/*",
+      "node_modules/electron-updater/**/*",
+      "node_modules/fs-extra/**/*",
+      "node_modules/graceful-fs/**/*",
+      "node_modules/js-yaml/**/*",
+      "node_modules/jsonfile/**/*",
+      "node_modules/lazy-val/**/*",
+      "node_modules/lodash.escaperegexp/**/*",
+      "node_modules/lodash.isequal/**/*",
+      "node_modules/ms/**/*",
+      "node_modules/sax/**/*",
+      "node_modules/semver/**/*",
+      "node_modules/tiny-typed-emitter/**/*",
+      "node_modules/universalify/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Xpel POS",
+      "artifactName": "Xpel-POS-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Xpel-POS-${version}-portable.exe"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "abahvictor360-sketch",
+        "repo": "Xpelpos"
+      }
+    ]
   }
 }

@@ -7,7 +7,11 @@ import { CircleDot, PlayCircle } from "lucide-react";
 import { db, getSetting } from "@/lib/db";
 import { shiftTotals } from "@/lib/repository";
 import type { Shift } from "@/lib/types";
-import { formatMoney } from "@/lib/utils";
+import { cx, formatMoney } from "@/lib/utils";
+
+/** How long the closed-till prompt stays before it fades itself out. */
+const PROMPT_VISIBLE_MS = 12_000;
+const FADE_MS = 400;
 
 /** The dark card at the foot of the sidebar: live till status rather than an advert. */
 export default function SidebarStatus() {
@@ -18,10 +22,34 @@ export default function SidebarStatus() {
   );
   const [takings, setTakings] = useState(0);
   const [cashier, setCashier] = useState("Counter");
+  // The closed-till prompt has said its piece after a few seconds; leaving it
+  // there just crowds the sidebar, since sales work without a shift anyway.
+  const [promptFading, setPromptFading] = useState(false);
+  const [promptGone, setPromptGone] = useState(false);
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((value) => setCashier(value || "Counter"));
   }, []);
+
+  useEffect(() => {
+    // A shift that opens and later closes gets the prompt again.
+    if (shift) {
+      setPromptFading(false);
+      setPromptGone(false);
+      return;
+    }
+
+    const fade = window.setTimeout(() => setPromptFading(true), PROMPT_VISIBLE_MS);
+    const remove = window.setTimeout(
+      () => setPromptGone(true),
+      PROMPT_VISIBLE_MS + FADE_MS,
+    );
+
+    return () => {
+      window.clearTimeout(fade);
+      window.clearTimeout(remove);
+    };
+  }, [shift]);
 
   useEffect(() => {
     if (!shift) {
@@ -41,8 +69,15 @@ export default function SidebarStatus() {
     };
   }, [shift]);
 
+  if (!shift && promptGone) return null;
+
   return (
-    <div className="mt-3 rounded-3xl bg-ink-900 p-4 text-white">
+    <div
+      className={cx(
+        "mt-3 rounded-3xl bg-ink-900 p-4 text-white transition-opacity duration-300 motion-reduce:transition-none",
+        promptFading && !shift ? "opacity-0" : "opacity-100",
+      )}
+    >
       {shift ? (
         <>
           <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-olive-300">
