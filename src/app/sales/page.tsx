@@ -67,8 +67,16 @@ export default function SalesPage() {
     if (!report) return undefined;
     if (method === "all") return report;
     const rows = report.rows.filter((row) => row.paymentMethod === method);
-    return { ...report, rows };
+    return { ...report, rows, topProducts: report.productsByPayment[method] };
   }, [report, method]);
+
+  // Units sold per product, most-sold first.
+  const productsSold = useMemo(
+    () => [...(filtered?.topProducts ?? [])].sort((a, b) => b.quantity - a.quantity || b.revenue - a.revenue),
+    [filtered],
+  );
+  const unitsSold = productsSold.reduce((sum, product) => sum + product.quantity, 0);
+  const productRevenue = productsSold.reduce((sum, product) => sum + product.revenue, 0);
 
   const runExport = async (kind: "xlsx" | "pdf" | "docx") => {
     if (!filtered) return;
@@ -190,6 +198,53 @@ export default function SalesPage() {
         <Summary label="Transactions" value={formatNumber(report?.summary.transactions ?? 0)} />
         <Summary label="Items sold" value={formatNumber(report?.summary.itemsSold ?? 0)} />
         <Summary label="Gross profit" value={formatMoney(report?.summary.grossProfit ?? 0)} />
+      </div>
+
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
+          <h2 className="text-sm font-bold text-ink-900">Products sold</h2>
+          <span className="text-xs text-ink-700/55">
+            {formatNumber(unitsSold)} units · {productsSold.length} products
+          </span>
+        </div>
+
+        {!productsSold.length ? (
+          <p className="px-4 py-14 text-center text-sm text-ink-700/55">No products sold in this period.</p>
+        ) : (
+          <div className="max-h-[420px] overflow-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="sticky top-0 border-b border-black/5 bg-white text-xs uppercase tracking-wide text-ink-700/50">
+                <tr>
+                  <th className="px-4 py-2.5 font-medium">Product</th>
+                  <th className="px-4 py-2.5 font-medium">SKU</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Units sold</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {productsSold.map((product) => (
+                  <tr key={`${product.sku}-${product.name}`} className="hover:bg-black/[0.015]">
+                    <td className="px-4 py-3 font-medium text-ink-900">{product.name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-ink-700/60">{product.sku || "—"}</td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">
+                      {formatNumber(product.quantity)} pcs
+                    </td>
+                    <td className="tabular whitespace-nowrap px-4 py-3 text-right">{formatMoney(product.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="sticky bottom-0 border-t border-black/10 bg-white text-sm font-bold text-ink-900">
+                <tr>
+                  <td className="px-4 py-3" colSpan={2}>
+                    Total
+                  </td>
+                  <td className="tabular whitespace-nowrap px-4 py-3 text-right">{formatNumber(unitsSold)} pcs</td>
+                  <td className="tabular whitespace-nowrap px-4 py-3 text-right">{formatMoney(productRevenue)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card overflow-hidden">
