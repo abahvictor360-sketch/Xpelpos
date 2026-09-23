@@ -39,7 +39,27 @@ jobs:
 
       - run: npm ci
 
-      - name: Build and publish
-        run: npm run export:desktop && npx electron-builder --win --publish always
+      - name: Build
+        run: npm run export:desktop && npx electron-builder --win --publish never
+
+      # Published by hand rather than by electron-builder: its installer and
+      # portable targets race to create the release and one of them fails.
+      # latest.yml goes up last so tills never see a feed whose exe is missing.
+      - name: Publish release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v$version"
+          exes=(
+            "release/Xpel-POS-Setup-$version.exe"
+            "release/Xpel-POS-Setup-$version.exe.blockmap"
+            "release/Xpel-POS-$version-portable.exe"
+          )
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${exes[@]}" --clobber
+          else
+            gh release create "$tag" "${exes[@]}" --target "$GITHUB_SHA" --title "$version" --generate-notes
+          fi
+          gh release upload "$tag" release/latest.yml --clobber
