@@ -64,7 +64,10 @@ export default function SettingsPage() {
   const setField = (key: keyof StoreProfile) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setProfile((current) => ({
       ...current,
-      [key]: key === "vatRate" ? Number(event.target.value) || 0 : event.target.value,
+      [key]:
+        key === "vatRate" || key === "lowStockAlert"
+          ? Number(event.target.value) || 0
+          : event.target.value,
     }));
 
   const signIn = async (mode: "in" | "up") => {
@@ -301,6 +304,21 @@ export default function SettingsPage() {
               />
             </label>
           </div>
+
+          <label className="block">
+            <span className="label">Warn me when stock falls to</span>
+            <input
+              value={profile.lowStockAlert}
+              onChange={setField("lowStockAlert")}
+              className="input tabular"
+              inputMode="numeric"
+              placeholder="10"
+            />
+            <span className="mt-1 block text-xs text-ink-700/55">
+              Units or fewer. The bell in the header lists what is running low, and the till says so
+              as a product crosses the line. Set to 0 to turn the warnings off.
+            </span>
+          </label>
           <label className="block">
             <span className="label">Receipt footer</span>
             <input

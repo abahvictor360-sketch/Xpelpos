@@ -319,11 +319,12 @@ export function cartTotals(lines: CartLine[], discount = 0, vatRate = 0) {
   return { subtotal, tax, total, itemCount };
 }
 
-/** How many sales this till has already rung up today, so the next one follows on. */
-async function nextReceiptSequence(now: Date): Promise<number> {
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  const taken = await getDb().sales.where("soldAt").aboveOrEqual(dayStart).count();
-  return taken + 1;
+/**
+ * The sale's running number on this till. Counted over the till's whole life
+ * rather than per day, so a six-character receipt number is never reused.
+ */
+async function nextReceiptSequence(): Promise<number> {
+  return (await getDb().sales.count()) + 1;
 }
 
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
@@ -338,7 +339,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
 
   const sale: Sale = {
     id: newId(),
-    receiptNo: buildReceiptNo(deviceId, await nextReceiptSequence(now), now),
+    receiptNo: buildReceiptNo(deviceId, await nextReceiptSequence()),
     soldAt: nowIso,
     subtotal,
     discount,

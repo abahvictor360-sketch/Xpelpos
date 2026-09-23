@@ -74,25 +74,22 @@ export function cx(...values: Array<string | false | null | undefined>): string 
 }
 
 /**
- * A receipt number short enough to read down the phone: XP-260921-A14 is the
- * 14th sale of 21 September on till A. The till letter keeps two counters from
- * colliding when a shop runs more than one.
+ * A six-character receipt number: X, one letter for the till, then the sale's
+ * running number on it. XH0042 is the forty-second sale rung up on till H,
+ * short enough to read down a phone or write on a paper slip.
+ *
+ * The till letter comes from the device id, so two tills in one shop never
+ * hand out the same number. Past ten thousand sales the number simply grows a
+ * digit rather than wrapping onto a number already used.
  */
-export function buildReceiptNo(deviceId: string, sequence: number, date = new Date()): string {
-  const stamp = [
-    date.getFullYear().toString().slice(2),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("");
-
-  // One stable letter per till, derived from its device id.
+export function buildReceiptNo(deviceId: string, sequence: number): string {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   let hash = 0;
   for (const char of deviceId) hash = (hash * 31 + char.charCodeAt(0)) % letters.length;
-  const till = letters[hash];
 
-  return `XP-${stamp}-${till}${String(sequence).padStart(2, "0")}`;
+  return `X${letters[hash]}${String(sequence).padStart(4, "0")}`;
 }
+
 
 
 /**

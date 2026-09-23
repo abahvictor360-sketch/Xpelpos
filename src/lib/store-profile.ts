@@ -9,6 +9,8 @@ export interface StoreProfile {
   phone: string;
   vatRate: number;
   receiptFooter: string;
+  /** Stock at or below this many units raises a low-stock alert. */
+  lowStockAlert: number;
 }
 
 export const DEFAULT_PROFILE: StoreProfile = {
@@ -18,15 +20,17 @@ export const DEFAULT_PROFILE: StoreProfile = {
   phone: "",
   vatRate: 0,
   receiptFooter: "Thank you for shopping with Xpel Beauty NG",
+  lowStockAlert: 10,
 };
 
 export async function loadStoreProfile(): Promise<StoreProfile> {
-  const [name, address, phone, vatRate, receiptFooter] = await Promise.all([
+  const [name, address, phone, vatRate, receiptFooter, lowStockAlert] = await Promise.all([
     getSetting("store_name", DEFAULT_PROFILE.name),
     getSetting("store_address", DEFAULT_PROFILE.address),
     getSetting("store_phone", DEFAULT_PROFILE.phone),
     getSetting("vat_rate", "0"),
     getSetting("receipt_footer", DEFAULT_PROFILE.receiptFooter),
+    getSetting("low_stock_alert", String(DEFAULT_PROFILE.lowStockAlert)),
   ]);
   return {
     name: name || DEFAULT_PROFILE.name,
@@ -34,6 +38,7 @@ export async function loadStoreProfile(): Promise<StoreProfile> {
     phone,
     vatRate: Math.min(Math.max(Number(vatRate) || 0, 0), 100),
     receiptFooter: receiptFooter || DEFAULT_PROFILE.receiptFooter,
+    lowStockAlert: Math.max(Number(lowStockAlert) || DEFAULT_PROFILE.lowStockAlert, 0),
   };
 }
 
@@ -44,6 +49,7 @@ export async function saveStoreProfile(profile: StoreProfile): Promise<void> {
     setSetting("store_phone", profile.phone.trim()),
     setSetting("vat_rate", String(Math.min(Math.max(profile.vatRate || 0, 0), 100))),
     setSetting("receipt_footer", profile.receiptFooter.trim()),
+    setSetting("low_stock_alert", String(Math.max(profile.lowStockAlert || 0, 0))),
   ]);
 }
 

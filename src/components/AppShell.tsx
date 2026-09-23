@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   BarChart3,
-  Bell,
   Boxes,
   ClipboardList,
   Download,
@@ -25,6 +24,7 @@ import { cx } from "@/lib/utils";
 import { seedOnFirstRun, syncCatalogueOnUpdate } from "@/lib/seed";
 import { pruneActivities } from "@/lib/activity";
 import SyncBadge from "./SyncBadge";
+import StockAlerts from "./StockAlerts";
 import InstallButton from "./InstallButton";
 import Toaster from "./Toaster";
 import SidebarStatus from "./SidebarStatus";
@@ -220,9 +220,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/sell" className="btn-primary hidden sm:inline-flex">
               <ShoppingCart size={16} /> New sale
             </Link>
-            <Link href="/settings" className="icon-btn hidden sm:grid" aria-label="Settings">
-              <Bell size={17} />
-            </Link>
+            <StockAlerts />
           </div>
         </header>
 
