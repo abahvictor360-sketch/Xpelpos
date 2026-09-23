@@ -58,6 +58,11 @@ export default function SellPage() {
   const [receipt, setReceipt] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
   const store = useStoreProfile();
   const held = useLiveQuery(() => db.heldSales.toArray(), [], [] as HeldSale[]);
+  const catalogue = useLiveQuery(
+    () => db.products.filter((product) => !product.deletedAt && product.isActive).toArray(),
+    [],
+    [] as Product[],
+  );
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((value) => setCashierName(value || "Counter"));
@@ -97,6 +102,17 @@ export default function SellPage() {
 
   const manualDiscount = Math.max(0, Number(discount) || 0);
   const discountValue = round2(manualDiscount + (promo?.discount ?? 0));
+  // In-stock lines first, so the cashier is not tapping past sold-out items.
+  const quickPicks = useMemo(
+    () =>
+      [...catalogue].sort((a, b) => {
+        const aOut = a.stockQty <= 0 ? 1 : 0;
+        const bOut = b.stockQty <= 0 ? 1 : 0;
+        return aOut - bOut || a.name.localeCompare(b.name);
+      }),
+    [catalogue],
+  );
+
   const totals = useMemo(
     () => cartTotals(lines, discountValue, store.vatRate),
     [lines, discountValue, store.vatRate],
@@ -251,15 +267,59 @@ export default function SellPage() {
           </div>
 
           {lines.length === 0 ? (
-            <div className="px-4 py-14 text-center">
-              <p className="text-sm font-medium text-ink-900">No products yet</p>
-              <p className="mt-1 text-sm text-ink-700/55">
-                Search above by the first letters of the product name, then press Enter.
-              </p>
-              <Link href="/inventory" className="btn-ghost mt-4">
-                Add products to inventory
-              </Link>
-            </div>
+            catalogue.length === 0 ? (
+              <div className="px-4 py-14 text-center">
+                <p className="text-sm font-medium text-ink-900">Nothing in the inventory yet</p>
+                <p className="mt-1 text-sm text-ink-700/55">
+                  Add what the shop sells and it becomes available to ring up here.
+                </p>
+                <Link href="/inventory" className="btn-ghost mt-4">
+                  Add products to inventory
+                </Link>
+              </div>
+            ) : (
+              /* An empty cart is the start of a sale, not a dead end: put the
+                 catalogue on screen so the next customer can be rung up by
+                 tapping, without typing a search. */
+              <div className="p-3">
+                <p className="px-1 pb-2 text-xs text-ink-700/55">
+                  Tap a product to start the sale, or search above.
+                </p>
+                <div className="grid max-h-[420px] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+                  {quickPicks.map((product) => {
+                    const out = product.stockQty <= 0;
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => addProduct(product)}
+                        disabled={out}
+                        className={cx(
+                          "rounded-2xl border p-3 text-left transition",
+                          out
+                            ? "cursor-not-allowed border-black/5 bg-black/[0.02] opacity-60"
+                            : "border-black/10 hover:border-brand-400 hover:bg-brand-50",
+                        )}
+                      >
+                        <span className="line-clamp-2 block text-sm font-semibold text-ink-900">
+                          {product.name}
+                        </span>
+                        <span className="tabular mt-1 block text-sm font-bold text-brand-700">
+                          {formatMoney(product.price)}
+                        </span>
+                        <span
+                          className={cx(
+                            "tabular mt-0.5 block text-[11px]",
+                            out ? "text-brand-700" : "text-ink-700/50",
+                          )}
+                        >
+                          {out ? "Out of stock" : `${product.stockQty} in stock`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )
           ) : (
             <ul className="divide-y divide-black/5">
               {lines.map((line) => (
