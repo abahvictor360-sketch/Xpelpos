@@ -44,7 +44,10 @@ jobs:
 
       # Published by hand rather than by electron-builder: its installer and
       # portable targets race to create the release and one of them fails.
-      # latest.yml goes up last so tills never see a feed whose exe is missing.
+      # Any existing release for the tag is replaced (the tag is kept), since a
+      # half-finished upload leaves hidden assets that block re-uploading.
+      # The new release stays a draft until every file, latest.yml last, is up,
+      # so neither the /download page nor the updater sees it half-built.
       - name: Publish release
         shell: bash
         env:
@@ -52,14 +55,13 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           tag="v$version"
-          exes=(
-            "release/Xpel-POS-Setup-$version.exe"
-            "release/Xpel-POS-Setup-$version.exe.blockmap"
-            "release/Xpel-POS-$version-portable.exe"
-          )
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${exes[@]}" --clobber
-          else
-            gh release create "$tag" "${exes[@]}" --target "$GITHUB_SHA" --title "$version" --generate-notes
+            gh release delete "$tag" --yes
           fi
-          gh release upload "$tag" release/latest.yml --clobber
+          gh release create "$tag" \
+            "release/Xpel-POS-Setup-$version.exe" \
+            "release/Xpel-POS-Setup-$version.exe.blockmap" \
+            "release/Xpel-POS-$version-portable.exe" \
+            --draft --target "$GITHUB_SHA" --title "$version" --generate-notes
+          gh release upload "$tag" release/latest.yml
+          gh release edit "$tag" --draft=false --latest
