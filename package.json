@@ -110,7 +110,8 @@
       {
         "provider": "github",
         "owner": "abahvictor360-sketch",
-        "repo": "Xpelpos"
+        "repo": "Xpelpos",
+        "releaseType": "release"
       }
     ]
   }
