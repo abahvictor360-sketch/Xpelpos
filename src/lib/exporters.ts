@@ -224,15 +224,13 @@ export async function exportPdf(report: SalesReport): Promise<void> {
     autoTable(doc, {
       startY: y + 10,
       head: [["Product", "SKU", "Units sold", "Revenue", "Profit"]],
-      body: report.topProducts
-        .slice(0, 60)
-        .map((product) => [
-          product.name,
-          product.sku || "—",
-          product.quantity,
-          formatMoney(product.revenue),
-          formatMoney(product.profit),
-        ]),
+      body: report.topProducts.map((product) => [
+        product.name,
+        product.sku || "—",
+        product.quantity,
+        formatMoney(product.revenue),
+        formatMoney(product.profit),
+      ]),
       theme: "striped",
       margin: { left: margin, right: margin, bottom: 46 },
       headStyles: {

@@ -1,0 +1,42 @@
+# Builds the Windows installer and portable exe and attaches them, with the
+# auto-update feed (latest.yml), to the GitHub release for the pushed tag.
+# The /download page and installed tills both read from that release.
+#
+# To ship: bump "version" in package.json, merge, then push a matching tag,
+# e.g. `git tag v1.0.10 && git push origin v1.0.10`.
+name: Release desktop app
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check the tag matches package.json
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Build and publish
+        run: npm run export:desktop && npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

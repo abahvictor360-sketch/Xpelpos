@@ -1,6 +1,6 @@
 {
   "name": "xpel-pos",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -110,7 +110,8 @@
       {
         "provider": "github",
         "owner": "abahvictor360-sketch",
-        "repo": "Xpelpos"
+        "repo": "Xpelpos",
+        "releaseType": "release"
       }
     ]
   }

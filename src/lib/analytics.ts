@@ -47,6 +47,8 @@ export interface SalesReport {
   summary: ReportSummary;
   rows: ReportRow[];
   topProducts: ProductPerformance[];
+  /** The same per-product totals, limited to sales paid by each method. */
+  productsByPayment: Record<PaymentMethod, ProductPerformance[]>;
   series: SeriesPoint[];
 }
 
@@ -90,12 +92,16 @@ export function buildReport(
   let itemsSold = 0;
   let grossProfit = 0;
   const performance = new Map<string, ProductPerformance>();
+  const performanceByPayment: Record<PaymentMethod, Map<string, ProductPerformance>> = {
+    cash: new Map(),
+    transfer: new Map(),
+    card: new Map(),
+  };
+  const methodBySale = new Map(counted.map((sale) => [sale.id, sale.paymentMethod]));
 
-  for (const item of countedItems) {
-    itemsSold += item.quantity;
-    grossProfit += (item.unitPrice - item.costPrice) * item.quantity;
+  const addTo = (target: Map<string, ProductPerformance>, item: SaleItem) => {
     const key = item.productId ?? item.name;
-    const current = performance.get(key) ?? {
+    const current = target.get(key) ?? {
       name: item.name,
       sku: item.sku,
       quantity: 0,
@@ -105,8 +111,21 @@ export function buildReport(
     current.quantity += item.quantity;
     current.revenue += item.lineTotal;
     current.profit += (item.unitPrice - item.costPrice) * item.quantity;
-    performance.set(key, current);
+    target.set(key, current);
+  };
+
+  for (const item of countedItems) {
+    itemsSold += item.quantity;
+    grossProfit += (item.unitPrice - item.costPrice) * item.quantity;
+    addTo(performance, item);
+    const method = methodBySale.get(item.saleId);
+    if (method && performanceByPayment[method]) addTo(performanceByPayment[method], item);
   }
+
+  const finishProducts = (source: Map<string, ProductPerformance>) =>
+    [...source.values()]
+      .map((entry) => ({ ...entry, revenue: round2(entry.revenue), profit: round2(entry.profit) }))
+      .sort((a, b) => b.revenue - a.revenue);
 
   const rows: ReportRow[] = [...sales]
     .sort((a, b) => b.soldAt.localeCompare(a.soldAt))
@@ -140,9 +159,12 @@ export function buildReport(
       byPayment,
     },
     rows,
-    topProducts: [...performance.values()]
-      .map((entry) => ({ ...entry, revenue: round2(entry.revenue), profit: round2(entry.profit) }))
-      .sort((a, b) => b.revenue - a.revenue),
+    topProducts: finishProducts(performance),
+    productsByPayment: {
+      cash: finishProducts(performanceByPayment.cash),
+      transfer: finishProducts(performanceByPayment.transfer),
+      card: finishProducts(performanceByPayment.card),
+    },
     series: buildSeries(counted, from, to),
   };
 }

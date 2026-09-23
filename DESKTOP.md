@@ -64,16 +64,22 @@ this repository, downloads a newer build in the background, and installs it when
 the till is closed, so a sale is never interrupted. `File > Check for updates`
 forces a check and offers an immediate restart.
 
-Shipping a new version takes three steps:
+Shipping a new version:
 
-1. Bump `version` in `package.json`.
-2. `npm run dist`.
-3. Create a GitHub release tagged `v<version>` and attach **all three** files
-   from `release/`: the installer, the portable build, and `latest.yml`.
+1. Bump `version` in `package.json` (and the fallback in
+   `src/lib/download-config.ts`), and merge.
+2. Push a matching tag: `git tag v1.0.10 && git push origin v1.0.10`.
+
+The **Release desktop app** workflow (`.github/workflows/release-desktop.yml`)
+then builds on a Windows runner and publishes the GitHub release for that tag
+with all three files: the installer, the portable build, and `latest.yml`.
 
 `latest.yml` is the feed — without it, installed tills have no way to learn that
 a new version exists. The installer filename must stay exactly as
 electron-builder writes it, since the feed refers to it by name.
+
+To build by hand instead, run `npm run dist` and attach those three files from
+`release/` to a release tagged `v<version>`.
 
 Only the installed (NSIS) build updates itself. The portable exe is a single
 file with nowhere to install to, so it has to be re-downloaded by hand.
