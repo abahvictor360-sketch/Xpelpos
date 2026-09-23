@@ -68,7 +68,8 @@ Shipping a new version:
 
 1. Bump `version` in `package.json` (and the fallback in
    `src/lib/download-config.ts`), and merge.
-2. Push a matching tag: `git tag v1.0.10 && git push origin v1.0.10`.
+2. Push a matching tag (`git tag v1.0.10 && git push origin v1.0.10`), or run
+   **Release desktop app** from the repository's Actions tab.
 
 The **Release desktop app** workflow (`.github/workflows/release-desktop.yml`)
 then builds on a Windows runner and publishes the GitHub release for that tag

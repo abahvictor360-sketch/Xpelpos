@@ -2,14 +2,16 @@
 # auto-update feed (latest.yml), to the GitHub release for the pushed tag.
 # The /download page and installed tills both read from that release.
 #
-# To ship: bump "version" in package.json, merge, then push a matching tag,
-# e.g. `git tag v1.0.10 && git push origin v1.0.10`.
+# To ship: bump "version" in package.json and merge, then either push a
+# matching tag (`git tag v1.0.10 && git push origin v1.0.10`) or run this
+# workflow from the Actions tab, which creates the v<version> release itself.
 name: Release desktop app
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,6 +28,7 @@ jobs:
           cache: npm
 
       - name: Check the tag matches package.json
+        if: github.ref_type == 'tag'
         shell: bash
         run: |
           version="$(node -p "require('./package.json').version")"
