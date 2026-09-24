@@ -17,10 +17,12 @@ import { toast } from "./Toaster";
  */
 export default function StockAlerts() {
   const profile = useStoreProfile();
-  const products = useLiveQuery(
+  // No fallback value: while Dexie is still reading, this stays undefined.
+  // Treating that moment as "nothing is low" is what used to make every low
+  // product look newly low a beat later, so the whole shelf toasted on load.
+  const products = useLiveQuery<Product[] | undefined>(
     () => db.products.filter((product) => !product.deletedAt && product.isActive).toArray(),
     [],
-    [] as Product[],
   );
 
   const [open, setOpen] = useState(false);
@@ -33,7 +35,7 @@ export default function StockAlerts() {
   const level = profile.lowStockAlert;
 
   const { out, low } = useMemo(() => {
-    const list = [...products].sort((a, b) => a.stockQty - b.stockQty);
+    const list = [...(products ?? [])].sort((a, b) => a.stockQty - b.stockQty);
     return {
       out: list.filter((product) => product.stockQty <= 0),
       low: list.filter((product) => product.stockQty > 0 && product.stockQty <= level),
@@ -52,11 +54,13 @@ export default function StockAlerts() {
 
   useEffect(() => {
     if (level <= 0) return;
+    // Nothing is known yet; wait for the real catalogue before judging.
+    if (!products) return;
 
     const atRisk = [...out, ...low];
 
-    // The first pass after loading only records what is already low; a shop
-    // opening with ten low products does not want ten toasts at once.
+    // The first pass with real data only records what is already low, so
+    // opening the app is silent however much of the shelf is running out.
     if (!primed.current) {
       primed.current = true;
       atRisk.forEach((product) => announced.current.add(product.id));
@@ -85,7 +89,7 @@ export default function StockAlerts() {
     <div ref={wrapper} className="relative">
       <button
         onClick={() => setOpen((value) => !value)}
-        className="icon-btn relative hidden sm:grid"
+        className="icon-btn relative grid"
         aria-label={count > 0 ? `${count} stock alert(s)` : "Stock alerts"}
       >
         <Bell size={17} />
@@ -97,7 +101,7 @@ export default function StockAlerts() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-pop">
+        <div className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-pop">
           <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
             <p className="text-sm font-bold text-ink-900">Stock alerts</p>
             <span className="text-[11px] text-ink-700/50">at or below {level}</span>
