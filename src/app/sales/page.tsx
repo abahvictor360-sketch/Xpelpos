@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Ban, Eye, FileSpreadsheet, FileText, FileType2, Loader2 } from "lucide-react";
-import { useReport } from "@/lib/useReport";
+import { Ban, Eye, FileSpreadsheet, FileText, FileType2, Loader2, Search, X } from "lucide-react";
+import { useSalesData } from "@/lib/useReport";
+import { buildReport, describeFilter, filterSales } from "@/lib/analytics";
 import { exportDocx, exportExcel, exportPdf } from "@/lib/exporters";
 import { voidSale } from "@/lib/repository";
 import { db } from "@/lib/db";
@@ -53,6 +54,7 @@ export default function SalesPage() {
   const [customFrom, setCustomFrom] = useState(toDateInput(addDays(today, -7)));
   const [customTo, setCustomTo] = useState(toDateInput(today));
   const [method, setMethod] = useState<PaymentMethod | "all">("all");
+  const [query, setQuery] = useState("");
   const [exporting, setExporting] = useState<string>("");
   const [viewing, setViewing] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
   const [voiding, setVoiding] = useState<Sale | null>(null);
@@ -61,14 +63,16 @@ export default function SalesPage() {
     () => resolveRange(rangeKey, customFrom, customTo),
     [rangeKey, customFrom, customTo],
   );
-  const report = useReport(range.from, range.to);
+  const data = useSalesData(range.from, range.to);
 
+  // Everything below — cards, tables and exports — follows the search and payment filter.
   const filtered = useMemo(() => {
-    if (!report) return undefined;
-    if (method === "all") return report;
-    const rows = report.rows.filter((row) => row.paymentMethod === method);
-    return { ...report, rows, topProducts: report.productsByPayment[method] };
-  }, [report, method]);
+    if (!data) return undefined;
+    const narrowed = filterSales(data.sales, data.items, { method, query });
+    const report = buildReport(narrowed.sales, narrowed.items, range.from, range.to);
+    return { ...report, filterLabel: describeFilter({ method, query }) };
+  }, [data, method, query, range]);
+  const searching = query.trim().length > 0;
 
   // Units sold per product, most-sold first.
   const productsSold = useMemo(
@@ -167,6 +171,29 @@ export default function SalesPage() {
             </select>
           </label>
 
+          <label className="block min-w-[220px] flex-1">
+            <span className="label">Search</span>
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/45" />
+              <input
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Product, receipt, customer…"
+                className="input pl-9 pr-9"
+              />
+              {searching && (
+                <button
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-ink-700/55 hover:bg-black/5"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </label>
+
           <div className="ml-auto flex flex-wrap gap-2">
             <ExportButton
               label="Excel"
@@ -193,11 +220,18 @@ export default function SalesPage() {
         </div>
       </div>
 
+      {filtered?.filterLabel && (
+        <p className="text-xs text-ink-700/60">
+          Showing {filtered.filterLabel}. Totals and exports cover only what matches
+          {searching && " — for a product search, the matching lines of each sale"}.
+        </p>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Summary label="Revenue" value={formatMoney(report?.summary.revenue ?? 0)} />
-        <Summary label="Transactions" value={formatNumber(report?.summary.transactions ?? 0)} />
-        <Summary label="Items sold" value={formatNumber(report?.summary.itemsSold ?? 0)} />
-        <Summary label="Gross profit" value={formatMoney(report?.summary.grossProfit ?? 0)} />
+        <Summary label="Revenue" value={formatMoney(filtered?.summary.revenue ?? 0)} />
+        <Summary label="Transactions" value={formatNumber(filtered?.summary.transactions ?? 0)} />
+        <Summary label="Items sold" value={formatNumber(filtered?.summary.itemsSold ?? 0)} />
+        <Summary label="Gross profit" value={formatMoney(filtered?.summary.grossProfit ?? 0)} />
       </div>
 
       <div className="card overflow-hidden">
@@ -209,7 +243,7 @@ export default function SalesPage() {
         </div>
 
         {!productsSold.length ? (
-          <p className="px-4 py-14 text-center text-sm text-ink-700/55">No products sold in this period.</p>
+          <p className="px-4 py-14 text-center text-sm text-ink-700/55">{searching ? "No products match your search." : "No products sold in this period."}</p>
         ) : (
           <div className="max-h-[420px] overflow-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
@@ -218,7 +252,7 @@ export default function SalesPage() {
                   <th className="px-4 py-2.5 font-medium">Product</th>
                   <th className="px-4 py-2.5 font-medium">SKU</th>
                   <th className="px-4 py-2.5 text-right font-medium">Units sold</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Revenue</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Amount sold</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
@@ -254,7 +288,7 @@ export default function SalesPage() {
         </div>
 
         {!filtered?.rows.length ? (
-          <p className="px-4 py-14 text-center text-sm text-ink-700/55">No sales in this period.</p>
+          <p className="px-4 py-14 text-center text-sm text-ink-700/55">{searching ? "No sales match your search." : "No sales in this period."}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">
