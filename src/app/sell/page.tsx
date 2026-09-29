@@ -29,7 +29,7 @@ import {
   searchCustomers,
 } from "@/lib/repository";
 import { db } from "@/lib/db";
-import { getSetting } from "@/lib/db";
+import { getSetting, setSetting } from "@/lib/db";
 import { useStoreProfile } from "@/lib/store-profile";
 import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
@@ -42,8 +42,14 @@ const METHODS: Array<{ id: PaymentMethod; label: string; icon: React.ElementType
   { id: "card", label: "Card", icon: CreditCard },
 ];
 
+/** Where the basket in progress is kept between screens and restarts. */
+const OPEN_CART_KEY = "open_cart";
+
 export default function SellPage() {
   const [lines, setLines] = useState<CartLine[]>([]);
+  // The cart outlives this page: a cashier checking a price in Inventory, or
+  // closing the till by accident, should come back to the same basket.
+  const [cartLoaded, setCartLoaded] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [discount, setDiscount] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
@@ -164,6 +170,32 @@ export default function SellPage() {
         .filter((line) => line.quantity > 0),
     );
   };
+
+  useEffect(() => {
+    let active = true;
+    void getSetting(OPEN_CART_KEY, "").then((saved) => {
+      if (!active) return;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as CartLine[];
+          if (Array.isArray(parsed) && parsed.length > 0) setLines(parsed);
+        } catch {
+          // A cart we cannot read is not worth blocking the till over.
+        }
+      }
+      setCartLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Only once the saved cart has been read, or the empty starting state
+    // would overwrite it before it arrives.
+    if (!cartLoaded) return;
+    void setSetting(OPEN_CART_KEY, lines.length > 0 ? JSON.stringify(lines) : "");
+  }, [lines, cartLoaded]);
 
   const clearCart = () => {
     setLines([]);
