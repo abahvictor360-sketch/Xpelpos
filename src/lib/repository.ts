@@ -329,6 +329,7 @@ async function nextReceiptSequence(): Promise<number> {
 
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
   if (input.lines.length === 0) throw new Error("Cart is empty");
+  console.info(`[xpel] sale starting, ${input.lines.length} line(s)`);
 
   const deviceId = await getDeviceId();
   const now = new Date();
@@ -426,6 +427,10 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         });
       }
     },
+  );
+
+  console.info(
+    `[xpel] sale saved ${sale.receiptNo} total ${sale.total} items ${items.length}`,
   );
 
   await logActivity({

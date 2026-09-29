@@ -97,7 +97,15 @@ let instance: XpelPosDatabase | null = null;
 
 /** Dexie only exists in the browser; keep SSR imports safe. */
 export function getDb(): XpelPosDatabase {
-  if (!instance) instance = new XpelPosDatabase();
+  if (!instance) {
+    instance = new XpelPosDatabase();
+    // A database that will not open is the one fault that hides every other
+    // record, including the activity log. Say so where the file log can see it.
+    instance
+      .open()
+      .then(() => console.info(`[xpel] database open, version ${instance?.verno}`))
+      .catch((error) => console.error(`[xpel] DATABASE FAILED TO OPEN: ${String(error)}`));
+  }
   return instance;
 }
 
