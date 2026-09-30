@@ -108,6 +108,14 @@ body {
     color: #000 !important;
   }
 
+  /* On screen a long receipt scrolls inside the dialog; on paper it runs full length. */
+  .print-receipt-sheet,
+  .print-receipt-body {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
   .print-hide {
     display: none !important;
   }

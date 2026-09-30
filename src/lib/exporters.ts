@@ -9,7 +9,30 @@ import { formatDate, formatDateTime, formatMoney } from "./utils";
 function fileStem(report: SalesReport): string {
   const from = report.from.toISOString().slice(0, 10);
   const to = report.to.toISOString().slice(0, 10);
-  return from === to ? `xpel-sales-${from}` : `xpel-sales-${from}_to_${to}`;
+  const stem = from === to ? `xpel-sales-${from}` : `xpel-sales-${from}_to_${to}`;
+  const slug = (report.filterLabel ?? "")
+    .toLowerCase()
+    .replace(/^search /, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  return slug ? `${stem}-${slug}` : stem;
+}
+
+/** Products sold, most units first, with a closing total row. */
+function productsSold(report: SalesReport) {
+  const products = [...report.topProducts].sort(
+    (a, b) => b.quantity - a.quantity || b.revenue - a.revenue,
+  );
+  const total = products.reduce(
+    (sum, product) => ({
+      quantity: sum.quantity + product.quantity,
+      revenue: sum.revenue + product.revenue,
+      profit: sum.profit + product.profit,
+    }),
+    { quantity: 0, revenue: 0, profit: 0 },
+  );
+  return { products, total };
 }
 
 function periodLabel(report: SalesReport): string {
@@ -110,6 +133,11 @@ export async function exportPdf(report: SalesReport): Promise<void> {
   doc.text(`Generated ${formatDateTime(new Date().toISOString())}`, pageWidth - margin, 60, {
     align: "right",
   });
+  if (report.filterLabel) {
+    doc.setFont(REPORT_FONT_NAME, "bold");
+    doc.text(`Filtered: ${report.filterLabel}`, pageWidth - margin, 74, { align: "right" });
+    doc.setFont(REPORT_FONT_NAME, "normal");
+  }
 
   // ---- Headline figures ----------------------------------------------
   const cards = headline(report);
@@ -163,16 +191,83 @@ export async function exportPdf(report: SalesReport): Promise<void> {
     columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
   });
 
-  // ---- Transactions ----------------------------------------------------
+  // ---- Products sold -------------------------------------------------
+  const sold = productsSold(report);
   const afterBreakdown = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 
   doc.setFont(REPORT_FONT_NAME, "bold");
   doc.setFontSize(11);
   doc.setTextColor(...ink);
-  doc.text("Transactions", margin, afterBreakdown + 28);
+  doc.text("Products sold", margin, afterBreakdown + 28);
 
   autoTable(doc, {
     startY: afterBreakdown + 38,
+    head: [["Product", "SKU", "Units sold", "Amount sold", "Profit"]],
+    body: sold.products.map((product) => [
+      product.name,
+      product.sku || "—",
+      product.quantity,
+      formatMoney(product.revenue),
+      formatMoney(product.profit),
+    ]),
+    foot: [
+      [
+        "Total",
+        "",
+        { content: String(sold.total.quantity), styles: { halign: "right" } },
+        { content: formatMoney(sold.total.revenue), styles: { halign: "right" } },
+        { content: formatMoney(sold.total.profit), styles: { halign: "right" } },
+      ],
+    ],
+    showFoot: "lastPage",
+    theme: "striped",
+    margin: { left: margin, right: margin, bottom: 46 },
+    headStyles: {
+      font: REPORT_FONT_NAME,
+      fontStyle: "bold",
+      fillColor: rgb(REPORT_COLOURS.olive),
+      textColor: 255,
+      fontSize: 8.5,
+      cellPadding: 6,
+    },
+    footStyles: {
+      font: REPORT_FONT_NAME,
+      fontStyle: "bold",
+      fillColor: rgb(REPORT_COLOURS.tint),
+      textColor: ink,
+      fontSize: 8.5,
+      cellPadding: 6,
+    },
+    styles: {
+      font: REPORT_FONT_NAME,
+      fontSize: 8,
+      cellPadding: 5,
+      textColor: ink,
+      lineColor: rgb(REPORT_COLOURS.line),
+      lineWidth: 0.4,
+    },
+    columnStyles: {
+      2: { halign: "right" },
+      3: { halign: "right", fontStyle: "bold" },
+      4: { halign: "right" },
+    },
+  });
+
+  // ---- Transactions ----------------------------------------------------
+  let afterProducts = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  // Keep the heading with its header and first row rather than stranding it at the foot of a page.
+  if (afterProducts + 80 > pageHeight - 56) {
+    doc.addPage();
+    afterProducts = 34;
+  }
+
+  doc.setFont(REPORT_FONT_NAME, "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...ink);
+  doc.text("Transactions", margin, afterProducts + 28);
+
+  autoTable(doc, {
+    startY: afterProducts + 38,
     head: [["Receipt", "Date & time", "Items", "Qty", "Discount", "Total", "Payment", "Cashier", "Status"]],
     body: report.rows.map((row) => [
       row.receiptNo,
@@ -206,57 +301,6 @@ export async function exportPdf(report: SalesReport): Promise<void> {
       6: { cellWidth: 62 },
     },
   });
-
-  // ---- Product performance ---------------------------------------------
-  if (report.topProducts.length) {
-    const afterRows = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-    // Only break the page when the section genuinely will not fit below the table.
-    const sectionHeight = 48 + Math.min(report.topProducts.length, 60) * 20;
-    const needsPage = afterRows + sectionHeight > pageHeight - 56;
-    if (needsPage) doc.addPage();
-
-    const y = needsPage ? 62 : afterRows + 28;
-    doc.setFont(REPORT_FONT_NAME, "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...ink);
-    doc.text("Product performance", margin, y);
-
-    autoTable(doc, {
-      startY: y + 10,
-      head: [["Product", "SKU", "Units sold", "Revenue", "Profit"]],
-      body: report.topProducts.map((product) => [
-        product.name,
-        product.sku || "—",
-        product.quantity,
-        formatMoney(product.revenue),
-        formatMoney(product.profit),
-      ]),
-      theme: "striped",
-      margin: { left: margin, right: margin, bottom: 46 },
-      headStyles: {
-        font: REPORT_FONT_NAME,
-        fontStyle: "bold",
-        fillColor: rgb(REPORT_COLOURS.olive),
-        textColor: 255,
-        fontSize: 8.5,
-        cellPadding: 6,
-      },
-      alternateRowStyles: { fillColor: rgb(REPORT_COLOURS.zebra) },
-      styles: {
-        font: REPORT_FONT_NAME,
-        fontSize: 8,
-        cellPadding: 5,
-        textColor: ink,
-        lineColor: rgb(REPORT_COLOURS.line),
-        lineWidth: 0.4,
-      },
-      columnStyles: {
-        2: { halign: "right" },
-        3: { halign: "right", fontStyle: "bold" },
-        4: { halign: "right" },
-      },
-    });
-  }
 
   // ---- Footer on every page --------------------------------------------
   const pages = doc.getNumberOfPages();
@@ -342,7 +386,12 @@ export async function exportExcel(report: SalesReport): Promise<void> {
   summary.getCell("B4").font = { bold: true, size: 12 };
 
   summary.mergeCells("B5:E5");
-  summary.getCell("B5").value = `Generated ${formatDateTime(new Date().toISOString())}`;
+  summary.getCell("B5").value = [
+    report.filterLabel ? `Filtered: ${report.filterLabel}` : "",
+    `Generated ${formatDateTime(new Date().toISOString())}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   summary.getCell("B5").font = { size: 9, italic: true, color: { argb: `FF${hex(REPORT_COLOURS.muted)}` } };
 
   summary.addImage(logoId, { tl: { col: 4.35, row: 0.35 }, ext: { width: 74, height: 74 } });
@@ -403,7 +452,13 @@ export async function exportExcel(report: SalesReport): Promise<void> {
     sheet.getRow(1).height = 26;
 
     sheet.mergeCells(2, 1, 2, headers.length);
-    sheet.getCell(2, 1).value = `${periodLabel(report)} · generated ${formatDateTime(new Date().toISOString())}`;
+    sheet.getCell(2, 1).value = [
+      periodLabel(report),
+      report.filterLabel ? `filtered: ${report.filterLabel}` : "",
+      `generated ${formatDateTime(new Date().toISOString())}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
     sheet.getCell(2, 1).font = { size: 9, color: { argb: `FF${hex(REPORT_COLOURS.muted)}` } };
 
     sheet.addImage(logoId, { tl: { col: headers.length - 0.9, row: 0.1 }, ext: { width: 52, height: 52 } });
@@ -440,6 +495,36 @@ export async function exportExcel(report: SalesReport): Promise<void> {
     return sheet;
   };
 
+  const sold = productsSold(report);
+  const productsSheet = addTable(
+    "Products sold",
+    [
+      { header: "Product", width: 38 },
+      { header: "SKU", width: 16 },
+      { header: "Units sold", width: 12, number: true },
+      { header: "Amount sold", width: 16, money: true },
+      { header: "Profit", width: 16, money: true },
+    ],
+    sold.products.map((product) => [
+      product.name,
+      product.sku,
+      product.quantity,
+      product.revenue,
+      product.profit,
+    ]),
+    REPORT_COLOURS.olive,
+  );
+  const totalRow = productsSheet.getRow(6 + sold.products.length);
+  ["Total", "", sold.total.quantity, sold.total.revenue, sold.total.profit].forEach((value, index) => {
+    const cell = totalRow.getCell(index + 1);
+    cell.value = value;
+    cell.font = { bold: true, size: 10 };
+    cell.fill = FILL(REPORT_COLOURS.tint);
+    cell.border = THIN_BORDER;
+    if (index >= 2) cell.alignment = { horizontal: "right" };
+    if (index >= 3) cell.numFmt = MONEY_FORMAT;
+  });
+
   addTable(
     "Transactions",
     [
@@ -469,25 +554,6 @@ export async function exportExcel(report: SalesReport): Promise<void> {
       entry.status,
     ]),
     REPORT_COLOURS.brand,
-  );
-
-  addTable(
-    "Products",
-    [
-      { header: "Product", width: 38 },
-      { header: "SKU", width: 16 },
-      { header: "Units sold", width: 12, number: true },
-      { header: "Revenue", width: 16, money: true },
-      { header: "Profit", width: 16, money: true },
-    ],
-    report.topProducts.map((product) => [
-      product.name,
-      product.sku,
-      product.quantity,
-      product.revenue,
-      product.profit,
-    ]),
-    REPORT_COLOURS.olive,
   );
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -649,6 +715,16 @@ export async function exportDocx(report: SalesReport): Promise<void> {
                     size: 18,
                     color: hex(REPORT_COLOURS.muted),
                   }),
+                  ...(report.filterLabel
+                    ? [
+                        new TextRun({
+                          text: `   Filtered: ${report.filterLabel}`,
+                          bold: true,
+                          size: 18,
+                          color: hex(REPORT_COLOURS.brand),
+                        }),
+                      ]
+                    : []),
                 ],
               }),
               new Paragraph({
@@ -667,6 +743,8 @@ export async function exportDocx(report: SalesReport): Promise<void> {
       }),
     ],
   });
+
+  const sold = productsSold(report);
 
   const heading = (text: string) =>
     new Paragraph({
@@ -704,6 +782,22 @@ export async function exportDocx(report: SalesReport): Promise<void> {
           table(["Metric", "Value"], headline(report), REPORT_COLOURS.brand, [1]),
           heading("Breakdown"),
           table(["Item", "Value"], breakdown(report), REPORT_COLOURS.brandDark, [1]),
+          heading("Products sold"),
+          table(
+            ["Product", "SKU", "Units sold", "Amount sold", "Profit"],
+            [
+              ...sold.products.map((product) => [
+                product.name,
+                product.sku || "—",
+                String(product.quantity),
+                formatMoney(product.revenue),
+                formatMoney(product.profit),
+              ]),
+              ["TOTAL", "", String(sold.total.quantity), formatMoney(sold.total.revenue), formatMoney(sold.total.profit)],
+            ],
+            REPORT_COLOURS.olive,
+            [2, 3, 4],
+          ),
           heading("Transactions"),
           table(
             ["Receipt", "Date & time", "Items", "Qty", "Total", "Payment", "Status"],
@@ -718,19 +812,6 @@ export async function exportDocx(report: SalesReport): Promise<void> {
             ]),
             REPORT_COLOURS.brand,
             [3, 4],
-          ),
-          heading("Product performance"),
-          table(
-            ["Product", "SKU", "Units sold", "Revenue", "Profit"],
-            report.topProducts.map((product) => [
-              product.name,
-              product.sku || "—",
-              String(product.quantity),
-              formatMoney(product.revenue),
-              formatMoney(product.profit),
-            ]),
-            REPORT_COLOURS.olive,
-            [2, 3, 4],
           ),
         ],
       },

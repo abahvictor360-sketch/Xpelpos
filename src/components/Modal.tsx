@@ -39,20 +39,21 @@ export default function Modal({ title, children, onClose, size = "md", footer }:
         aria-modal="true"
         aria-label={title}
         className={cx(
-          "max-h-[92vh] w-full overflow-auto rounded-t-2xl bg-white p-5 shadow-card outline-none sm:rounded-2xl",
+          "flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white p-5 shadow-card outline-none sm:rounded-2xl",
           size === "sm" && "max-w-sm",
           size === "md" && "max-w-lg",
           size === "lg" && "max-w-2xl",
         )}
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink-900">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-black/5">
             <X size={18} />
           </button>
         </div>
-        {children}
-        {footer && <div className="mt-5 flex gap-2">{footer}</div>}
+        {/* Only the body scrolls, so the title and the action buttons stay in view. */}
+        <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">{children}</div>
+        {footer && <div className="mt-5 flex shrink-0 gap-2">{footer}</div>}
       </div>
     </div>
   );

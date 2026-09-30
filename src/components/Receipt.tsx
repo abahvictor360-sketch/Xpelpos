@@ -32,15 +32,17 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
   // Portalled to <body> so the print stylesheet can hide everything except this.
   return createPortal(
     <div className="print-receipt-root fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
-      <div className="print-receipt-sheet w-full max-w-sm rounded-2xl bg-white p-5 shadow-card">
-        <div className="print-hide flex items-start justify-between">
+      {/* Capped to the screen: a long basket scrolls inside, and the header and
+          buttons stay in reach. Printing lifts the cap (see globals.css). */}
+      <div className="print-receipt-sheet flex max-h-full w-full max-w-sm flex-col rounded-2xl bg-white p-5 shadow-card">
+        <div className="print-hide flex shrink-0 items-start justify-between">
           <p className="text-sm font-semibold text-olive-700">{title}</p>
           <button onClick={onClose} aria-label="Close receipt" className="rounded-lg p-1 hover:bg-black/5">
             <X size={18} />
           </button>
         </div>
 
-        <div id="xpel-receipt" className="mt-3 text-center">
+        <div id="xpel-receipt" className="print-receipt-body -mx-2 mt-3 min-h-0 flex-1 overflow-y-auto px-2 text-center">
           <p className="text-base font-extrabold uppercase tracking-wide text-ink-900">{store.name}</p>
           {store.address && <p className="text-[11px] text-ink-700/60">{store.address}</p>}
           {store.phone && <p className="text-[11px] text-ink-700/60">Tel: {store.phone}</p>}
@@ -88,7 +90,7 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
           <p className="mt-4 text-[11px] text-ink-700/60">{store.receiptFooter}</p>
         </div>
 
-        <div className="print-hide mt-5 flex gap-2">
+        <div className="print-hide mt-4 flex shrink-0 gap-2 border-t border-black/5 pt-4">
           <button onClick={() => window.print()} className="btn-ghost flex-1">
             <Printer size={16} /> Print
           </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import type { PaymentMethod, Sale, SaleItem } from "./types";
-import { round2 } from "./utils";
+import { formatMoney, round2 } from "./utils";
 
 export interface ReportRow {
   receiptNo: string;
@@ -47,9 +47,70 @@ export interface SalesReport {
   summary: ReportSummary;
   rows: ReportRow[];
   topProducts: ProductPerformance[];
-  /** The same per-product totals, limited to sales paid by each method. */
-  productsByPayment: Record<PaymentMethod, ProductPerformance[]>;
   series: SeriesPoint[];
+  /** Describes any search or payment filter applied, e.g. `Search "aloe" · Cash`. */
+  filterLabel?: string;
+}
+
+export interface ReportFilter {
+  method?: PaymentMethod | "all";
+  query?: string;
+}
+
+/**
+ * Narrows raw sales before a report is built. A search matches a sale by
+ * receipt number, customer or cashier (the whole sale is kept), or by product
+ * name or SKU — then only the matching lines are kept and the sale's totals
+ * are recomputed from them, so revenue, units and profit describe just those
+ * products. Discounts apply to whole baskets and so drop out of such sales.
+ */
+export function filterSales(
+  sales: Sale[],
+  items: SaleItem[],
+  filter: ReportFilter,
+): { sales: Sale[]; items: SaleItem[] } {
+  const method = filter.method ?? "all";
+  const query = (filter.query ?? "").trim().toLowerCase();
+  const byMethod = method === "all" ? sales : sales.filter((sale) => sale.paymentMethod === method);
+  if (!query) {
+    const ids = new Set(byMethod.map((sale) => sale.id));
+    return { sales: byMethod, items: items.filter((item) => ids.has(item.saleId)) };
+  }
+
+  const itemsBySale = new Map<string, SaleItem[]>();
+  for (const item of items) {
+    const list = itemsBySale.get(item.saleId) ?? [];
+    list.push(item);
+    itemsBySale.set(item.saleId, list);
+  }
+  const has = (value: string | null | undefined) => (value ?? "").toLowerCase().includes(query);
+
+  const keptSales: Sale[] = [];
+  const keptItems: SaleItem[] = [];
+  for (const sale of byMethod) {
+    const lines = itemsBySale.get(sale.id) ?? [];
+    if (has(sale.receiptNo) || has(sale.customerName) || has(sale.cashierName)) {
+      keptSales.push(sale);
+      keptItems.push(...lines);
+      continue;
+    }
+    const matched = lines.filter((line) => has(line.name) || has(line.sku));
+    if (!matched.length) continue;
+    const subtotal = round2(matched.reduce((sum, line) => sum + line.lineTotal, 0));
+    keptSales.push({ ...sale, subtotal, discount: 0, tax: 0, total: subtotal });
+    keptItems.push(...matched);
+  }
+  return { sales: keptSales, items: keptItems };
+}
+
+export function describeFilter(filter: ReportFilter): string | undefined {
+  const parts: string[] = [];
+  const query = (filter.query ?? "").trim();
+  if (query) parts.push(`Search "${query}"`);
+  if (filter.method && filter.method !== "all") {
+    parts.push(filter.method.charAt(0).toUpperCase() + filter.method.slice(1));
+  }
+  return parts.length ? parts.join(" · ") : undefined;
 }
 
 const emptyPayments = (): Record<PaymentMethod, { total: number; count: number }> => ({
@@ -92,12 +153,6 @@ export function buildReport(
   let itemsSold = 0;
   let grossProfit = 0;
   const performance = new Map<string, ProductPerformance>();
-  const performanceByPayment: Record<PaymentMethod, Map<string, ProductPerformance>> = {
-    cash: new Map(),
-    transfer: new Map(),
-    card: new Map(),
-  };
-  const methodBySale = new Map(counted.map((sale) => [sale.id, sale.paymentMethod]));
 
   const addTo = (target: Map<string, ProductPerformance>, item: SaleItem) => {
     const key = item.productId ?? item.name;
@@ -118,8 +173,6 @@ export function buildReport(
     itemsSold += item.quantity;
     grossProfit += (item.unitPrice - item.costPrice) * item.quantity;
     addTo(performance, item);
-    const method = methodBySale.get(item.saleId);
-    if (method && performanceByPayment[method]) addTo(performanceByPayment[method], item);
   }
 
   const finishProducts = (source: Map<string, ProductPerformance>) =>
@@ -134,7 +187,7 @@ export function buildReport(
       return {
         receiptNo: sale.receiptNo,
         soldAt: sale.soldAt,
-        items: saleItems.map((i) => `${i.name} x${i.quantity}`).join(", "),
+        items: saleItems.map((i) => `${i.name} x${i.quantity} (${formatMoney(i.lineTotal)})`).join(", "),
         itemCount: saleItems.reduce((sum, i) => sum + i.quantity, 0),
         subtotal: round2(sale.subtotal),
         discount: round2(sale.discount),
@@ -160,11 +213,6 @@ export function buildReport(
     },
     rows,
     topProducts: finishProducts(performance),
-    productsByPayment: {
-      cash: finishProducts(performanceByPayment.cash),
-      transfer: finishProducts(performanceByPayment.transfer),
-      card: finishProducts(performanceByPayment.card),
-    },
     series: buildSeries(counted, from, to),
   };
 }
