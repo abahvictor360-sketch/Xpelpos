@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
 const { startUpdateChecks, checkWithFeedback } = require("./updater");
+const logger = require("./logger");
 
 const ROOT = path.join(__dirname, "..", "out");
 
@@ -56,9 +57,19 @@ function startServer(attempt = 0) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       const pathname = new URL(req.url, "http://localhost").pathname;
-      const file = resolveFile(pathname) || resolveFile("/404.html");
+      let file = resolveFile(pathname);
+
       if (!file) {
-        res.writeHead(404, { "Content-Type": "text/plain" });
+        // Only a page request may fall back to the 404 page. An asset must
+        // answer 404, because handing HTML back for a missing .js file makes
+        // the browser parse a web page as JavaScript, and the app dies with
+        // "Unexpected token '<'" instead of saying what is wrong.
+        const isAsset = pathname.startsWith("/_next/") || path.extname(pathname) !== "";
+        file = isAsset ? null : resolveFile("/404.html");
+      }
+
+      if (!file) {
+        res.writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
         res.end("Not found");
         return;
       }
@@ -86,6 +97,12 @@ function startServer(attempt = 0) {
 async function createWindow() {
   const port = await startServer();
 
+  logger.log("info", "Till opened", {
+    version: app.getVersion(),
+    port,
+    data: app.getPath("userData"),
+  });
+
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -101,6 +118,8 @@ async function createWindow() {
       spellcheck: false,
     },
   });
+
+  logger.attachRenderer(win.webContents);
 
   win.once("ready-to-show", () => {
     win.show();
@@ -139,6 +158,10 @@ Menu.setApplicationMenu(
         {
           label: "Open data folder",
           click: () => shell.openPath(app.getPath("userData")),
+        },
+        {
+          label: "Open log folder",
+          click: () => shell.openPath(logger.directory()),
         },
         {
           label: "About local data",
@@ -187,7 +210,12 @@ if (!app.requestSingleInstanceLock()) {
       win.focus();
     }
   });
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    logger.prune();
+    createWindow();
+  });
+
+  app.on("before-quit", () => logger.log("info", "Till closing"));
 }
 
 app.on("window-all-closed", () => {

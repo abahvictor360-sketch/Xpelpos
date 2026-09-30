@@ -105,6 +105,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
 
+    if (IS_DESKTOP) {
+      // The desktop app is served from disk by its own local server, so the
+      // worker buys no offline ability it does not already have. What it does
+      // buy is a cached app shell from the previous version: after an update
+      // that shell asks for chunk files the new build no longer has, and the
+      // page dies before it can save anything. Clear it out and stay clear.
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((one) => one.unregister())))
+        .then(() => (typeof caches !== "undefined" ? caches.keys() : []))
+        .then((keys) => Promise.all([...keys].map((key) => caches.delete(key))))
+        .catch(() => undefined);
+      return;
+    }
+
     let reloading = false;
     const onControllerChange = () => {
       // A new service worker took over — reload once so the UI matches the cache.
