@@ -12,6 +12,8 @@ import {
   History,
   LayoutDashboard,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Receipt,
   Settings,
   ShoppingCart,
@@ -87,9 +89,32 @@ const MENU = IS_DESKTOP
 
 const FLAT = MENU.flatMap((group) => group.items);
 
+/** Remembers whether the desktop sidebar is folded down to icons. */
+const COLLAPSED_KEY = "xpel-sidebar-collapsed";
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Desktop only: the phone/tablet drawer is already out of the way when shut.
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "1");
+    } catch {
+      // Storage can be unavailable; the sidebar simply starts expanded.
+    }
+  }, []);
+
+  const toggleCollapsed = () =>
+    setCollapsed((value) => {
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, value ? "0" : "1");
+      } catch {
+        // Not remembered this time; the toggle still works.
+      }
+      return !value;
+    });
 
   useEffect(() => {
     setMenuOpen(false);
@@ -157,16 +182,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cx(
-          "print-hide fixed inset-y-0 left-0 z-40 flex w-[272px] flex-col bg-white p-4 transition-transform",
-          "lg:static lg:h-[calc(100vh-2.5rem)] lg:translate-x-0 lg:rounded-4xl lg:border lg:border-black/[0.04] lg:shadow-card",
+          "print-hide fixed inset-y-0 left-0 z-40 flex w-[272px] max-w-[85vw] flex-col bg-white p-4 transition-[transform,width]",
+          "lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)] lg:max-w-none lg:shrink-0 lg:translate-x-0 lg:rounded-4xl lg:border lg:border-black/[0.04] lg:shadow-card",
+          collapsed && "lg:w-[84px] lg:px-3",
           menuOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="mb-2 flex items-center gap-3 px-2 pt-1">
-          <span className="grid h-11 w-11 place-items-center overflow-hidden rounded-2xl border border-black/5 bg-white">
+        <div className={cx("mb-2 flex items-center gap-3 px-2 pt-1", collapsed && "lg:justify-center lg:px-0")}>
+          <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl border border-black/5 bg-white">
             <Image src="/logo.png" alt="Xpel Beauty NG" width={34} height={34} priority />
           </span>
-          <span>
+          <span className={cx(collapsed && "lg:hidden")}>
             <span className="block text-sm font-extrabold tracking-tight text-ink-900">Xpel POS</span>
             <span className="block text-[11px] text-ink-700/50">Xpel Beauty NG</span>
           </span>
@@ -182,7 +208,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="-mr-1 flex-1 overflow-y-auto pr-1">
           {MENU.map((group) => (
             <div key={group.section}>
-              <p className="nav-section">{group.section}</p>
+              <p className={cx("nav-section", collapsed && "lg:hidden")}>{group.section}</p>
+              {collapsed && <div className="hidden lg:my-2 lg:block lg:border-t lg:border-black/5" />}
               <div className="space-y-0.5">
                 {group.items.map(({ href, label, icon: Icon }) => {
                   const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -190,15 +217,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={href}
                       href={href}
+                      title={collapsed ? label : undefined}
+                      aria-label={label}
                       className={cx(
                         "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition",
+                        collapsed && "lg:justify-center lg:px-0",
                         active
                           ? "bg-brand-500 text-white shadow-brand"
                           : "text-ink-700/70 hover:bg-black/[0.035] hover:text-ink-900",
                       )}
                     >
-                      <Icon size={18} className={active ? "text-white" : "text-ink-700/45"} />
-                      {label}
+                      <Icon size={18} className={cx("shrink-0", active ? "text-white" : "text-ink-700/45")} />
+                      <span className={cx("truncate", collapsed && "lg:sr-only")}>{label}</span>
                     </Link>
                   );
                 })}
@@ -207,17 +237,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        <SidebarStatus />
+        <div className={cx(collapsed && "lg:hidden")}>
+          <SidebarStatus />
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="print-hide sticky top-0 z-20 flex items-center gap-3 bg-[var(--page)]/85 px-4 py-3 backdrop-blur lg:static lg:bg-transparent lg:px-1 lg:pb-4 lg:pt-1 lg:backdrop-blur-none">
           <button
-            className="icon-btn lg:hidden"
+            className="icon-btn shrink-0 lg:hidden"
             onClick={() => setMenuOpen(true)}
             aria-label="Open navigation"
           >
             <Menu size={18} />
+          </button>
+          <button
+            className="icon-btn hidden shrink-0 lg:grid"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            title={collapsed ? "Expand menu" : "Collapse menu"}
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
 
           <div className="min-w-0">
@@ -229,7 +269,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </p>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {!IS_DESKTOP && <InstallButton />}
             <SyncBadge />
             <Link href="/sell" className="btn-primary hidden sm:inline-flex">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Banknote,
+  ChevronDown,
   CreditCard,
   Loader2,
   Minus,
@@ -62,6 +63,8 @@ export default function SellPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
+  // The phone checkout bar steps aside once the checkout panel itself is on screen.
+  const [checkoutInView, setCheckoutInView] = useState(false);
   const store = useStoreProfile();
   const held = useLiveQuery(() => db.heldSales.toArray(), [], [] as HeldSale[]);
   const catalogue = useLiveQuery(
@@ -69,6 +72,16 @@ export default function SellPage() {
     [],
     [] as Product[],
   );
+
+  useEffect(() => {
+    const panel = document.getElementById("checkout");
+    if (!panel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setCheckoutInView(entry.isIntersecting), {
+      threshold: 0.35,
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((value) => setCashierName(value || "Counter"));
@@ -274,8 +287,14 @@ export default function SellPage() {
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-      <section className="space-y-4">
+    // minmax(0, …) columns stop a long product name widening the page past the screen.
+    <div
+      className={cx(
+        "grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:pb-0",
+        lines.length > 0 && "pb-24",
+      )}
+    >
+      <section className="min-w-0 space-y-4">
         <ProductSearch onPick={addProduct} />
 
         <div className="card overflow-hidden">
@@ -353,17 +372,22 @@ export default function SellPage() {
               </div>
             )
           ) : (
-            <ul className="divide-y divide-black/5">
+            // A long basket scrolls inside the card, so search and checkout stay close.
+            <ul className="max-h-[55vh] divide-y divide-black/5 overflow-y-auto lg:max-h-[calc(100vh-17rem)]">
               {lines.map((line) => (
-                <li key={line.productId} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
+                <li
+                  key={line.productId}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3 sm:flex-nowrap sm:px-4"
+                >
+                  {/* On a phone the name takes its own row, with the controls beneath it. */}
+                  <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
                     <p className="truncate text-sm font-semibold text-ink-900">{line.name}</p>
                     <p className="tabular text-xs text-ink-700/55">
                       {formatMoney(line.unitPrice)} each · {line.stockQty} in stock
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1 rounded-xl border border-black/10 p-1">
+                  <div className="flex shrink-0 items-center gap-1 rounded-xl border border-black/10 p-1">
                     <button
                       onClick={() => setQuantity(line.productId, line.quantity - 1)}
                       className="grid h-7 w-7 place-items-center rounded-lg hover:bg-black/5"
@@ -387,13 +411,13 @@ export default function SellPage() {
                     </button>
                   </div>
 
-                  <p className="tabular w-24 text-right text-sm font-bold text-ink-900">
+                  <p className="tabular ml-auto w-24 shrink-0 text-right text-sm font-bold text-ink-900 sm:ml-0">
                     {formatMoney(line.unitPrice * line.quantity)}
                   </p>
 
                   <button
                     onClick={() => setQuantity(line.productId, 0)}
-                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-700/40 hover:bg-brand-50 hover:text-brand-700"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-700/40 hover:bg-brand-50 hover:text-brand-700"
                     aria-label={`Remove ${line.name}`}
                   >
                     <Trash2 size={16} />
@@ -434,7 +458,10 @@ export default function SellPage() {
         )}
       </section>
 
-      <section className="card h-fit p-4 lg:sticky lg:top-20">
+      <section
+        id="checkout"
+        className="card h-fit min-w-0 scroll-mt-20 p-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-ink-900">Checkout</h2>
           {shift ? (
@@ -603,6 +630,26 @@ export default function SellPage() {
           <span className="mt-0.5 block">Shortcuts: F2 search · F9 complete sale</span>
         </p>
       </section>
+
+      {/* Phones stack checkout below the basket; keep the total and a way down to it in reach. */}
+      {lines.length > 0 && !checkoutInView && (
+        <div className="print-hide fixed inset-x-0 bottom-0 z-20 border-t border-black/5 bg-white/95 px-4 py-3 shadow-card backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-xl items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-xs text-ink-700/55">
+                {totals.itemCount} item{totals.itemCount === 1 ? "" : "s"}
+              </p>
+              <p className="tabular truncate text-lg font-extrabold text-ink-900">{formatMoney(totals.total)}</p>
+            </div>
+            <button
+              onClick={() => document.getElementById("checkout")?.scrollIntoView({ behavior: "smooth" })}
+              className="btn-primary ml-auto shrink-0"
+            >
+              Checkout <ChevronDown size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {receipt && <Receipt sale={receipt.sale} items={receipt.items} onClose={() => setReceipt(null)} />}
     </div>
