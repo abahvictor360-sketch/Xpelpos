@@ -274,6 +274,20 @@ export async function deleteProductPermanently(
   return { deleted: true };
 }
 
+/**
+ * Exact lookup for a scanned or typed code: the product whose barcode matches,
+ * else the one whose SKU does. Case and surrounding spaces are ignored.
+ */
+export async function findProductByCode(code: string): Promise<Product | undefined> {
+  const wanted = code.trim().toUpperCase();
+  if (!wanted) return undefined;
+  const live = await getDb().products.filter((p) => p.isActive && !p.deletedAt).toArray();
+  return (
+    live.find((p) => (p.barcode ?? "").trim().toUpperCase() === wanted) ??
+    live.find((p) => (p.sku ?? "").trim().toUpperCase() === wanted)
+  );
+}
+
 /** Type-ahead search: matches name, SKU, category, brand or barcode. */
 export async function searchProducts(term: string, limit = 12): Promise<Product[]> {
   const query = term.trim().toLowerCase();
