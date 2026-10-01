@@ -1,6 +1,6 @@
 {
   "name": "xpel-pos",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -18,7 +18,9 @@
     "dexie": "^4.0.10",
     "dexie-react-hooks": "^1.1.7",
     "docx": "^9.0.3",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.454.0",
@@ -27,8 +29,7 @@
     "react-dom": "^19.3.0",
     "recharts": "^2.13.3",
     "uuid": "^11.0.3",
-    "xlsx": "^0.18.5",
-    "electron-updater": "^6.8.9"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.17.6",

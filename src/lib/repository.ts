@@ -288,6 +288,23 @@ export async function findProductByCode(code: string): Promise<Product | undefin
   );
 }
 
+/**
+ * Gives a product its barcode (or clears it with ""). A barcode belongs to one
+ * product only, or a scan could not tell them apart, so a clash is refused.
+ */
+export async function setProductBarcode(id: string, barcode: string): Promise<void> {
+  const code = barcode.trim();
+  if (code) {
+    const clash = await getDb()
+      .products.filter(
+        (p) => p.id !== id && !p.deletedAt && (p.barcode ?? "").trim().toUpperCase() === code.toUpperCase(),
+      )
+      .first();
+    if (clash) throw new Error(`${clash.name} already uses the barcode ${code}.`);
+  }
+  await updateProduct(id, { barcode: code });
+}
+
 /** Type-ahead search: matches name, SKU, category, brand or barcode. */
 export async function searchProducts(term: string, limit = 12): Promise<Product[]> {
   const query = term.trim().toLowerCase();

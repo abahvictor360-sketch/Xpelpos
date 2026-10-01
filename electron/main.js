@@ -1,7 +1,7 @@
 // Xpel POS desktop shell — serves the exported Next bundle over a local
 // http origin so service workers, IndexedDB and absolute /_next asset paths
 // all behave exactly as they do in the browser build.
-const { app, BrowserWindow, shell, Menu, dialog } = require("electron");
+const { app, BrowserWindow, shell, Menu, dialog, ipcMain } = require("electron");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -94,6 +94,40 @@ function startServer(attempt = 0) {
   });
 }
 
+// Printers installed on this PC, so Settings can offer the receipt printer by name.
+ipcMain.handle("xpel:list-printers", async (event) => {
+  const printers = await event.sender.getPrintersAsync();
+  return printers.map((printer) => ({
+    name: printer.name,
+    displayName: printer.displayName || printer.name,
+    isDefault: Boolean(printer.isDefault),
+  }));
+});
+
+// Prints the page as the receipt print stylesheet lays it out. With a printer
+// chosen in Settings it goes straight there; otherwise the print dialog opens.
+// Thermal rolls get a page exactly as wide as the roll and as long as the receipt.
+ipcMain.handle("xpel:print", (event, options = {}) => {
+  const settings = {
+    silent: Boolean(options.silent && options.deviceName),
+    printBackground: true,
+    margins: { marginType: "none" },
+  };
+  if (options.deviceName) settings.deviceName = options.deviceName;
+  if (options.pageWidthMicrons && options.pageHeightMicrons) {
+    settings.pageSize = {
+      width: Math.max(Math.round(options.pageWidthMicrons), 353),
+      height: Math.max(Math.round(options.pageHeightMicrons), 353),
+    };
+  }
+  return new Promise((resolve) => {
+    event.sender.print(settings, (ok, reason) => {
+      if (!ok) logger.log("warn", "Print did not complete", { reason, deviceName: options.deviceName });
+      resolve({ ok, reason: ok ? undefined : reason });
+    });
+  });
+});
+
 async function createWindow() {
   const port = await startServer();
 
@@ -116,6 +150,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 

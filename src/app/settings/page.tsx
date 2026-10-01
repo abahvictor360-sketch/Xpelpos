@@ -12,6 +12,7 @@ import InstallButton from "@/components/InstallButton";
 import { toast } from "@/components/Toaster";
 import Modal from "@/components/Modal";
 import { DEFAULT_PROFILE, loadStoreProfile, saveStoreProfile, type StoreProfile } from "@/lib/store-profile";
+import PrinterSettings from "@/components/PrinterSettings";
 
 export default function SettingsPage() {
   const [cashier, setCashier] = useState("");
@@ -333,6 +334,8 @@ export default function SettingsPage() {
           </button>
         </form>
       </section>
+
+      <PrinterSettings />
 
       <section className="card p-4">
         <h2 className="flex items-center gap-2 text-sm font-bold text-ink-900">
