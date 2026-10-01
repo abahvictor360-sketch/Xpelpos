@@ -66,7 +66,7 @@ export default function InventoryPage() {
     const rows = (showArchived ? archived : products).filter((product) =>
       !query
         ? true
-        : [product.name, product.sku, product.category, product.brand]
+        : [product.name, product.sku, product.category, product.brand, product.barcode]
             .join(" ")
             .toLowerCase()
             .includes(query),
@@ -383,7 +383,16 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
             placeholder="5"
           />
         </div>
-        <Field label="Barcode (optional)" value={form.barcode} onChange={set("barcode")} placeholder="Scan or type" />
+        <Field
+          label="Barcode (optional)"
+          value={form.barcode}
+          onChange={set("barcode")}
+          placeholder="Scan or type"
+          // A scanner ends with Enter; that should fill the field, not save the form.
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+        />
 
         <div className="rounded-2xl bg-black/[0.025] p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/60">Sold in cartons too?</p>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import { searchProducts } from "@/lib/repository";
+import { findProductByCode, searchProducts } from "@/lib/repository";
 import type { Product } from "@/lib/types";
 import { cx, formatMoney } from "@/lib/utils";
 
@@ -53,7 +53,35 @@ export default function ProductSearch({ onPick }: Props) {
     inputRef.current?.focus();
   };
 
+  // Enter resolves the box's current text, not the last results list: a scanner
+  // (or a quick typist) presses Enter before the debounced search catches up.
+  const pickTyped = async () => {
+    const typed = term.trim();
+    if (!typed) {
+      if (results[highlight]) pick(results[highlight]);
+      return;
+    }
+    const exact = await findProductByCode(typed);
+    if (exact) {
+      pick(exact);
+      return;
+    }
+    const fresh = await searchProducts(typed, 10);
+    const sameList = fresh.length === results.length && fresh.every((p, i) => p.id === results[i]?.id);
+    const product = sameList ? fresh[highlight] : fresh[0];
+    if (product) pick(product);
+    else {
+      setResults([]);
+      setOpen(true);
+    }
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void pickTyped();
+      return;
+    }
     if (!open || results.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -61,10 +89,6 @@ export default function ProductSearch({ onPick }: Props) {
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setHighlight((index) => (index - 1 + results.length) % results.length);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const product = results[highlight];
-      if (product) pick(product);
     } else if (event.key === "Escape") {
       setOpen(false);
     }

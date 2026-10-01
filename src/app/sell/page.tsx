@@ -25,7 +25,9 @@ import {
   cartTotals,
   checkout,
   discardHeldSale,
+  findProductByCode,
   getOpenShift,
+  searchProducts,
   holdSale,
   resumeHeldSale,
   searchCustomers,
@@ -36,6 +38,7 @@ import { getSetting, setSetting } from "@/lib/db";
 import { useStoreProfile } from "@/lib/store-profile";
 import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
+import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import type { CartLine, Coupon, Customer, HeldSale, PaymentMethod, Product, Sale, SaleItem, Shift } from "@/lib/types";
 import { cx, formatMoney, round2 } from "@/lib/utils";
 import { cartonPrice, cartonSize, describeQuantity, piecesOf } from "@/lib/units";
@@ -131,6 +134,27 @@ export default function SellPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
+
+  // A barcode scanner adds the product wherever the cursor is. Scanning the
+  // next customer's first item also clears the last receipt off the screen.
+  useBarcodeScanner(
+    (code) => {
+      void (async () => {
+        // Very fast typing of a name can look like a scan; let a name match through.
+        const product =
+          (await findProductByCode(code)) ??
+          (await searchProducts(code, 1)).find((p) => p.name.toLowerCase().startsWith(code.toLowerCase()));
+        if (!product) {
+          setError(`No product has the barcode ${code}. Add it to the product in Inventory.`);
+          toast(`Unknown barcode ${code}`, "error");
+          return;
+        }
+        setReceipt(null);
+        addProduct(product);
+      })();
+    },
+    !cartonAsk,
+  );
 
   const manualDiscount = Math.max(0, Number(discount) || 0);
   const discountValue = round2(manualDiscount + (promo?.discount ?? 0));
@@ -714,7 +738,7 @@ export default function SellPage() {
         </button>
         <p className="mt-2 text-center text-[11px] text-ink-700/50">
           Saved on this device instantly, synced to the cloud automatically.
-          <span className="mt-0.5 block">Shortcuts: F2 search · F9 complete sale</span>
+          <span className="mt-0.5 block">Shortcuts: F2 search · F9 complete sale · scan a barcode to add</span>
         </p>
       </section>
 
