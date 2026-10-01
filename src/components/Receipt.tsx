@@ -8,6 +8,8 @@ import { useStoreProfile } from "@/lib/store-profile";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { describeQuantity, unitName } from "@/lib/units";
 import { XPEL_LOGO_DATA_URI } from "@/lib/brand-assets";
+import { printReceipt } from "@/lib/printing";
+import { toast } from "@/components/Toaster";
 
 interface Props {
   sale: Sale;
@@ -74,7 +76,7 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
             <tbody>
               {items.map((item) => (
                 <tr key={item.id} className="align-top">
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     {item.name}
                     <span className="block text-[11px] text-ink-700/55">
                       {item.unit === "carton"
@@ -109,7 +111,16 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
         </div>
 
         <div className="print-hide mt-4 flex shrink-0 gap-2 border-t border-black/5 pt-4">
-          <button onClick={() => window.print()} className="btn-ghost flex-1">
+          <button
+            onClick={() =>
+              void printReceipt().then((result) => {
+                if (!result.ok && result.reason && result.reason !== "cancelled") {
+                  toast(`Could not print: ${result.reason}`, "error");
+                }
+              })
+            }
+            className="btn-ghost flex-1"
+          >
             <Printer size={16} /> Print
           </button>
           <button onClick={onClose} className="btn-primary flex-1">

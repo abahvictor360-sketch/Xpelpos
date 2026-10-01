@@ -76,10 +76,95 @@ body {
   border-radius: 999px;
 }
 
-/* Printing: only the receipt goes on paper, at thermal-roll width. */
+/*
+ * Printing: only the receipt goes on paper. body[data-paper] (set by
+ * src/lib/printing.ts) picks the layout for the till's printer: an 80 mm or
+ * 58 mm thermal roll, or an ordinary A4 / Letter sheet. The page size itself
+ * is injected at print time, sized to the receipt's length.
+ */
+
+/* Barcode labels: the same markup is the on-screen preview and the printed labels. */
+.barcode-labels {
+  display: grid;
+  justify-content: center;
+}
+.barcode-labels[data-layout="sheet"] {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3mm;
+}
+.barcode-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1mm;
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  padding: 1.5mm 2mm;
+  text-align: center;
+  break-inside: avoid;
+}
+.barcode-labels[data-layout="sheet"] .barcode-label {
+  height: 32mm;
+  border: 1px dashed #bbb;
+}
+.barcode-labels[data-layout="roll50"] .barcode-label {
+  width: 50mm;
+  height: 25mm;
+  break-after: page;
+}
+.barcode-labels[data-layout="roll40"] .barcode-label {
+  width: 40mm;
+  height: 30mm;
+  break-after: page;
+}
+.barcode-label-name {
+  max-height: 2.3em;
+  overflow: hidden;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.barcode-label-svg {
+  max-width: 100%;
+  height: auto;
+  max-height: 62%;
+}
+.barcode-label-price {
+  font-size: 10px;
+  font-weight: 800;
+}
+.barcode-labels-preview .barcode-labels:not([data-layout="sheet"]) {
+  gap: 3mm;
+}
+.barcode-labels-preview .barcode-labels:not([data-layout="sheet"]) .barcode-label {
+  border: 1px dashed #bbb;
+}
+.print-labels-root {
+  display: none;
+}
+
+/* Off-screen copy used to measure the receipt before printing; mirrors the print layout. */
+.receipt-measure {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  padding: 2mm 0;
+  font-size: 12px;
+  color: #000;
+}
+.receipt-measure[data-paper="58mm"] {
+  zoom: 0.86;
+}
+.receipt-measure .print-receipt-body {
+  max-height: none;
+  overflow: visible;
+}
+
 @media print {
   @page {
-    margin: 6mm;
+    margin: 0;
   }
 
   html,
@@ -99,34 +184,55 @@ body {
     background: #fff !important;
   }
 
-  .print-receipt-sheet {
-    width: 72mm !important;
-    max-width: 72mm !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    color: #000 !important;
-  }
-
-  /* On screen a long receipt scrolls inside the dialog; on paper it runs full length. */
-  /* The sheet anchors the watermark, so it centres on the whole printed slip. */
+  /* 80 mm roll (also the default): 72 mm is the printable width of the head. */
   .print-receipt-sheet {
     position: relative !important;
+    display: block !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 auto !important;
+    padding: 2mm 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
   }
 
-  .print-receipt-watermark {
-    display: flex !important;
+  body[data-paper="58mm"] .print-receipt-sheet {
+    width: 48mm !important;
+    max-width: 48mm !important;
+    zoom: 0.86;
   }
 
-  .print-receipt-sheet,
+  body[data-paper="a4"] .print-receipt-sheet {
+    width: 90mm !important;
+    max-width: 90mm !important;
+  }
+
+  /* Thermal heads print black or nothing: greys come out faint or dotted, so
+     every word and rule on the slip prints solid black. */
+  .print-receipt-sheet *:not(.print-receipt-watermark):not(.print-receipt-watermark *) {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+
   .print-receipt-body {
     display: block !important;
     max-height: none !important;
     overflow: visible !important;
   }
 
-  /* Keep the logo's colours on paper rather than letting the browser drop them. */
+  /* The sheet anchors the watermark, so it centres on the whole printed slip. */
+  .print-receipt-watermark {
+    display: flex !important;
+  }
+
+  body[data-watermark="0"] .print-receipt-watermark {
+    display: none !important;
+  }
+
+  /* Keep the logo on paper rather than letting the browser drop it as a "background". */
   .print-receipt-logo,
   .print-receipt-watermark img {
     -webkit-print-color-adjust: exact;
@@ -135,5 +241,18 @@ body {
 
   .print-hide {
     display: none !important;
+  }
+
+  body.printing-labels > *:not(.print-labels-root) {
+    display: none !important;
+  }
+
+  body.printing-labels .print-labels-root {
+    display: block !important;
+  }
+
+  .barcode-label,
+  .barcode-label * {
+    color: #000 !important;
   }
 }
