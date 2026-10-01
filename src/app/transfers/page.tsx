@@ -12,6 +12,14 @@ import {
 } from "@/lib/transfers";
 import type { Product, Transfer, TransferDirection } from "@/lib/types";
 import { cx, formatDateTime, formatMoney } from "@/lib/utils";
+import CartonQuantityField, {
+  emptyCartonEntry,
+  entryNote,
+  entryPieces,
+  entryProblem,
+  rememberCartonSize,
+  type CartonEntry,
+} from "@/components/CartonQuantityField";
 
 /** Dropdown value standing for "every product in the inventory". */
 const ALL_PRODUCTS = "__all__";
@@ -42,7 +50,8 @@ export default function TransfersPage() {
 
   const [direction, setDirection] = useState<TransferDirection>("in");
   const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("");
+  // Typed in pieces or cartons; stock always moves in pieces.
+  const [entry, setEntry] = useState<CartonEntry>(() => emptyCartonEntry());
   const [party, setParty] = useState("Warehouse");
   const [releasedBy, setReleasedBy] = useState("");
   const [receivedBy, setReceivedBy] = useState("");
@@ -66,7 +75,15 @@ export default function TransfersPage() {
 
   const everyProduct = productId === ALL_PRODUCTS;
   const selected = sorted.find((product) => product.id === productId);
-  const units = Math.trunc(Number(quantity) || 0);
+  // "Every product" moves the same number of pieces into each; cartons only make
+  // sense for one product, whose carton size is known.
+  const units = everyProduct ? Math.trunc(Number(entry.amount) || 0) : entryPieces(entry);
+
+  useEffect(() => {
+    const product = (products ?? []).find((row) => row.id === productId);
+    setEntry((current) => ({ ...emptyCartonEntry(product), unit: product ? current.unit : "pcs", amount: current.amount }));
+    // Only a change of product resets the carton size; stock edits elsewhere should not.
+  }, [productId]);
 
   useEffect(() => {
     void getSetting("cashier_name", "Counter").then((name) => setCashier(name || "Counter"));
@@ -97,6 +114,13 @@ export default function TransfersPage() {
       setError("Pick the product being moved");
       return;
     }
+    if (!everyProduct) {
+      const problem = entryProblem(entry);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -104,7 +128,7 @@ export default function TransfersPage() {
         const { recorded, skipped } = await recordBulkTransfer({
           productIds: sorted.map((product) => product.id),
           direction,
-          quantity: Number(quantity),
+          quantity: units,
           party,
           releasedBy,
           receivedBy,
@@ -120,21 +144,22 @@ export default function TransfersPage() {
                 .join(", ")}.`,
         );
       } else {
+        if (selected) await rememberCartonSize(selected, entry);
         const transfer = await recordTransfer({
           productId,
           direction,
-          quantity: Number(quantity),
+          quantity: units,
           party,
           releasedBy,
           receivedBy,
-          note,
+          note: [entryNote(entry), note].filter(Boolean).join(" · "),
         });
         setMessage(
           `${transfer.reference}: ${transfer.productName} stock ${transfer.stockBefore} → ${transfer.stockAfter}`,
         );
       }
 
-      setQuantity("");
+      setEntry((current) => ({ ...current, amount: "" }));
       setNote("");
       setReleasedBy("");
       setReceivedBy("");
@@ -205,18 +230,26 @@ export default function TransfersPage() {
             </select>
           </label>
 
-          <label className="block">
-            <span className="label">
-              {direction === "in" ? "Units received" : "Units sent out"}
-            </span>
-            <input
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-              inputMode="numeric"
-              placeholder="50"
-              className="input mt-1"
+          {everyProduct ? (
+            <label className="block">
+              <span className="label">
+                {direction === "in" ? "Pcs received, each" : "Pcs sent out, each"}
+              </span>
+              <input
+                value={entry.amount}
+                onChange={(event) => setEntry({ ...entry, unit: "pcs", amount: event.target.value })}
+                inputMode="numeric"
+                placeholder="50"
+                className="input mt-1"
+              />
+            </label>
+          ) : (
+            <CartonQuantityField
+              entry={entry}
+              onChange={setEntry}
+              label={direction === "in" ? "Quantity received" : "Quantity sent out"}
             />
-          </label>
+          )}
 
           {selected && units > 0 && (
             <p className="rounded-2xl bg-black/[0.03] px-3 py-2 text-xs text-ink-700/70">

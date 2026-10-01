@@ -2,6 +2,7 @@
 
 import type { PaymentMethod, Sale, SaleItem } from "./types";
 import { formatMoney, round2 } from "./utils";
+import { describeQuantity, piecesOf } from "./units";
 
 export interface ReportRow {
   receiptNo: string;
@@ -163,15 +164,16 @@ export function buildReport(
       revenue: 0,
       profit: 0,
     };
-    current.quantity += item.quantity;
+    // Units are counted in pieces (a carton of 12 is 12), and cost is per piece.
+    current.quantity += piecesOf(item);
     current.revenue += item.lineTotal;
-    current.profit += (item.unitPrice - item.costPrice) * item.quantity;
+    current.profit += item.lineTotal - item.costPrice * piecesOf(item);
     target.set(key, current);
   };
 
   for (const item of countedItems) {
-    itemsSold += item.quantity;
-    grossProfit += (item.unitPrice - item.costPrice) * item.quantity;
+    itemsSold += piecesOf(item);
+    grossProfit += item.lineTotal - item.costPrice * piecesOf(item);
     addTo(performance, item);
   }
 
@@ -187,8 +189,14 @@ export function buildReport(
       return {
         receiptNo: sale.receiptNo,
         soldAt: sale.soldAt,
-        items: saleItems.map((i) => `${i.name} x${i.quantity} (${formatMoney(i.lineTotal)})`).join(", "),
-        itemCount: saleItems.reduce((sum, i) => sum + i.quantity, 0),
+        items: saleItems
+          .map((i) =>
+            i.unit === "carton"
+              ? `${i.name} ${describeQuantity(i)} (${formatMoney(i.lineTotal)})`
+              : `${i.name} x${i.quantity} (${formatMoney(i.lineTotal)})`,
+          )
+          .join(", "),
+        itemCount: saleItems.reduce((sum, i) => sum + piecesOf(i), 0),
         subtotal: round2(sale.subtotal),
         discount: round2(sale.discount),
         total: round2(sale.total),

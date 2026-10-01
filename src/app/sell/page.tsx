@@ -19,6 +19,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import ProductSearch from "@/components/ProductSearch";
 import CustomerPicker from "@/components/CustomerPicker";
 import Receipt from "@/components/Receipt";
+import Modal from "@/components/Modal";
 import {
   applyCoupon,
   cartTotals,
@@ -28,6 +29,7 @@ import {
   holdSale,
   resumeHeldSale,
   searchCustomers,
+  updateProduct,
 } from "@/lib/repository";
 import { db } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db";
@@ -36,6 +38,15 @@ import { toast } from "@/components/Toaster";
 import { syncNow } from "@/lib/sync";
 import type { CartLine, Coupon, Customer, HeldSale, PaymentMethod, Product, Sale, SaleItem, Shift } from "@/lib/types";
 import { cx, formatMoney, round2 } from "@/lib/utils";
+import { cartonPrice, cartonSize, describeQuantity, piecesOf } from "@/lib/units";
+
+/** Whole units a line can sell from the stock on hand: pieces, or full cartons. */
+const maxUnits = (line: CartLine) => Math.floor(line.stockQty / Math.max(1, line.packSize ?? 1));
+
+const stockMessage = (line: CartLine) =>
+  line.unit === "carton"
+    ? `Only ${line.stockQty} pcs of ${line.name} left — ${maxUnits(line)} full carton(s).`
+    : `Only ${line.stockQty} of ${line.name} left in stock.`;
 
 const METHODS: Array<{ id: PaymentMethod; label: string; icon: React.ElementType }> = [
   { id: "cash", label: "Cash", icon: Banknote },
@@ -63,6 +74,8 @@ export default function SellPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<{ sale: Sale; items: SaleItem[] } | null>(null);
+  // Selling a product in cartons before anyone has said how big its carton is.
+  const [cartonAsk, setCartonAsk] = useState<{ product: Product; size: string; price: string } | null>(null);
   // The phone checkout bar steps aside once the checkout panel itself is on screen.
   const [checkoutInView, setCheckoutInView] = useState(false);
   const store = useStoreProfile();
@@ -144,8 +157,8 @@ export default function SellPage() {
     setLines((current) => {
       const existing = current.find((line) => line.productId === product.id);
       if (existing) {
-        if (existing.quantity >= product.stockQty) {
-          setError(`Only ${product.stockQty} of ${product.name} left in stock.`);
+        if (existing.quantity >= maxUnits({ ...existing, stockQty: product.stockQty })) {
+          setError(stockMessage({ ...existing, stockQty: product.stockQty }));
           return current;
         }
         return current.map((line) =>
@@ -166,9 +179,57 @@ export default function SellPage() {
           costPrice: product.costPrice,
           quantity: 1,
           stockQty: product.stockQty,
+          unit: "pcs",
+          packSize: 1,
         },
       ];
     });
+  };
+
+  /** Switches a line between pieces and cartons, keeping the count the cashier typed. */
+  const applyUnit = (product: Product, unit: "pcs" | "carton") => {
+    setError("");
+    setLines((current) =>
+      current.map((line) => {
+        if (line.productId !== product.id) return line;
+        if (unit === "pcs") {
+          return { ...line, unit: "pcs", packSize: 1, unitPrice: product.price, stockQty: product.stockQty };
+        }
+        const size = cartonSize(product);
+        const next: CartLine = {
+          ...line,
+          unit: "carton",
+          packSize: size,
+          unitPrice: cartonPrice(product),
+          stockQty: product.stockQty,
+        };
+        if (maxUnits(next) < 1) {
+          setError(`Only ${product.stockQty} pcs of ${product.name} in stock — not enough for a carton of ${size}.`);
+          return line;
+        }
+        return { ...next, quantity: Math.min(line.quantity, maxUnits(next)) };
+      }),
+    );
+  };
+
+  const chooseUnit = (productId: string, unit: "pcs" | "carton") => {
+    const product = catalogue.find((row) => row.id === productId);
+    if (!product) return;
+    if (unit === "carton" && cartonSize(product) === 0) {
+      setCartonAsk({ product, size: "", price: "" });
+      return;
+    }
+    applyUnit(product, unit);
+  };
+
+  const saveCartonSize = async () => {
+    if (!cartonAsk) return;
+    const size = Math.trunc(Number(cartonAsk.size) || 0);
+    if (size < 1) return;
+    const price = Number(cartonAsk.price) || 0;
+    await updateProduct(cartonAsk.product.id, { unitsPerCarton: size, cartonPrice: price });
+    applyUnit({ ...cartonAsk.product, unitsPerCarton: size, cartonPrice: price }, "carton");
+    setCartonAsk(null);
   };
 
   const setQuantity = (productId: string, quantity: number) => {
@@ -176,8 +237,8 @@ export default function SellPage() {
       current
         .map((line) => {
           if (line.productId !== productId) return line;
-          const capped = Math.min(Math.max(quantity, 0), line.stockQty);
-          if (quantity > line.stockQty) setError(`Only ${line.stockQty} of ${line.name} left in stock.`);
+          const capped = Math.min(Math.max(quantity, 0), maxUnits(line));
+          if (quantity > maxUnits(line)) setError(stockMessage(line));
           return { ...line, quantity: capped };
         })
         .filter((line) => line.quantity > 0),
@@ -383,8 +444,32 @@ export default function SellPage() {
                   <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
                     <p className="truncate text-sm font-semibold text-ink-900">{line.name}</p>
                     <p className="tabular text-xs text-ink-700/55">
-                      {formatMoney(line.unitPrice)} each · {line.stockQty} in stock
+                      {line.unit === "carton"
+                        ? `${formatMoney(line.unitPrice)} per carton of ${line.packSize} · ${line.stockQty} pcs in stock`
+                        : `${formatMoney(line.unitPrice)} each · ${line.stockQty} in stock`}
                     </p>
+                  </div>
+
+                  <div
+                    className="flex shrink-0 rounded-xl border border-black/10 p-0.5"
+                    role="group"
+                    aria-label={`Sell ${line.name} in`}
+                  >
+                    {(["pcs", "carton"] as const).map((unit) => (
+                      <button
+                        key={unit}
+                        onClick={() => chooseUnit(line.productId, unit)}
+                        aria-pressed={(line.unit ?? "pcs") === unit}
+                        className={cx(
+                          "rounded-lg px-2 py-1 text-xs font-semibold transition",
+                          (line.unit ?? "pcs") === unit
+                            ? "bg-brand-500 text-white"
+                            : "text-ink-700/60 hover:bg-black/5",
+                        )}
+                      >
+                        {unit === "pcs" ? "Pcs" : "Ctn"}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1 rounded-xl border border-black/10 p-1">
@@ -441,7 +526,7 @@ export default function SellPage() {
                   <button onClick={() => void restoreHeld(entry.id)} className="font-medium text-ink-900">
                     {entry.label}
                     <span className="ml-1 text-xs text-ink-700/50">
-                      ({entry.lines.reduce((sum, line) => sum + line.quantity, 0)})
+                      ({entry.lines.reduce((sum, line) => sum + piecesOf(line), 0)})
                     </span>
                   </button>
                   <button
@@ -483,7 +568,9 @@ export default function SellPage() {
                   <span className="min-w-0 text-ink-700/75">
                     <span className="block truncate text-ink-900">{line.name}</span>
                     <span className="tabular text-xs text-ink-700/50">
-                      {line.quantity} × {formatMoney(line.unitPrice)}
+                      {line.unit === "carton"
+                        ? `${describeQuantity(line)} × ${formatMoney(line.unitPrice)}`
+                        : `${line.quantity} × ${formatMoney(line.unitPrice)}`}
                     </span>
                   </span>
                   <span className="tabular shrink-0 font-medium text-ink-900">
@@ -649,6 +736,65 @@ export default function SellPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {cartonAsk && (
+        <Modal
+          title={`Sell ${cartonAsk.product.name} by the carton`}
+          onClose={() => setCartonAsk(null)}
+          size="sm"
+          footer={
+            <>
+              <button onClick={() => setCartonAsk(null)} className="btn-ghost flex-1">
+                Cancel
+              </button>
+              <button
+                onClick={() => void saveCartonSize()}
+                disabled={!(Math.trunc(Number(cartonAsk.size) || 0) > 0)}
+                className="btn-primary flex-1"
+              >
+                Use cartons
+              </button>
+            </>
+          }
+        >
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveCartonSize();
+            }}
+          >
+            <label className="block">
+              <span className="label">How many pcs are in one carton?</span>
+              <input
+                value={cartonAsk.size}
+                onChange={(event) => setCartonAsk({ ...cartonAsk, size: event.target.value })}
+                inputMode="numeric"
+                placeholder="e.g. 12"
+                autoFocus
+                className="input"
+              />
+            </label>
+            <label className="block">
+              <span className="label">Carton price (optional)</span>
+              <input
+                value={cartonAsk.price}
+                onChange={(event) => setCartonAsk({ ...cartonAsk, price: event.target.value })}
+                inputMode="decimal"
+                placeholder={
+                  Number(cartonAsk.size) > 0
+                    ? `${formatMoney(cartonAsk.product.price * Number(cartonAsk.size))} (pcs × price)`
+                    : "pcs × selling price"
+                }
+                className="input"
+              />
+            </label>
+            <p className="text-xs text-ink-700/55">
+              Saved on the product, so you are only asked once. Selling a carton takes that many pcs off stock.
+            </p>
+          </form>
+        </Modal>
       )}
 
       {receipt && <Receipt sale={receipt.sale} items={receipt.items} onClose={() => setReceipt(null)} />}

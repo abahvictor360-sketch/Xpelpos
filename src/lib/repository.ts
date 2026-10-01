@@ -20,6 +20,7 @@ import type {
   TransferDirection,
 } from "./types";
 import { buildReceiptNo, customerCodeFor, formatDate, newId, round2 } from "./utils";
+import { piecesOf } from "./units";
 
 const DEVICE_KEY = "device_id";
 
@@ -42,6 +43,10 @@ export interface ProductInput {
   stockQty: number;
   lowStockThreshold?: number;
   barcode?: string;
+  /** Pieces in a carton; 0 clears it. */
+  unitsPerCarton?: number;
+  /** Price of a whole carton; 0 means pieces × unit price. */
+  cartonPrice?: number;
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
@@ -70,6 +75,8 @@ export async function createProduct(input: ProductInput): Promise<Product> {
     stockQty: Math.trunc(input.stockQty),
     lowStockThreshold: Math.trunc(input.lowStockThreshold ?? 5),
     barcode: (input.barcode ?? "").trim(),
+    unitsPerCarton: Math.max(0, Math.trunc(input.unitsPerCarton ?? 0)),
+    cartonPrice: Math.max(0, round2(input.cartonPrice ?? 0)),
     isActive: true,
     createdAt: now,
     updatedAt: now,
@@ -112,6 +119,10 @@ export async function updateProduct(id: string, patch: Partial<ProductInput> & {
       ? { lowStockThreshold: Math.trunc(patch.lowStockThreshold) }
       : {}),
     ...(patch.barcode !== undefined ? { barcode: patch.barcode.trim() } : {}),
+    ...(patch.unitsPerCarton !== undefined
+      ? { unitsPerCarton: Math.max(0, Math.trunc(patch.unitsPerCarton)) }
+      : {}),
+    ...(patch.cartonPrice !== undefined ? { cartonPrice: Math.max(0, round2(patch.cartonPrice)) } : {}),
     ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
     updatedAt: new Date().toISOString(),
     syncState: "pending",
@@ -315,7 +326,8 @@ export function cartTotals(lines: CartLine[], discount = 0, vatRate = 0) {
   const taxable = Math.max(0, subtotal - discount);
   const tax = round2(taxable * (vatRate / 100));
   const total = round2(taxable + tax);
-  const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
+  // Counted in pieces, so a carton of 12 reads as 12 items.
+  const itemCount = lines.reduce((sum, line) => sum + piecesOf(line), 0);
   return { subtotal, tax, total, itemCount };
 }
 
@@ -374,6 +386,8 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     costPrice: round2(line.costPrice),
     quantity: line.quantity,
     lineTotal: round2(line.unitPrice * line.quantity),
+    unit: line.unit ?? "pcs",
+    packSize: line.unit === "carton" ? Math.max(1, Math.trunc(line.packSize ?? 1)) : 1,
     createdAt: nowIso,
     syncState: "pending",
   }));
@@ -402,23 +416,31 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
         }
       }
 
-      for (const line of input.lines) {
-        const product = await dbi.products.get(line.productId);
+      // Stock is kept in pieces; a carton line takes carton-size pieces per carton.
+      // Lines for the same product (say a carton and some loose pieces) add up.
+      const piecesByProduct = new Map<string, number>();
+      for (const item of items) {
+        if (!item.productId) continue;
+        piecesByProduct.set(item.productId, (piecesByProduct.get(item.productId) ?? 0) + piecesOf(item));
+      }
+
+      for (const [productId, pieces] of piecesByProduct) {
+        const product = await dbi.products.get(productId);
         if (!product) continue;
         // Re-check against the stored level, not the quantity the cart was built with.
-        if (product.stockQty < line.quantity) {
-          throw new Error(`Only ${product.stockQty} of ${product.name} left in stock.`);
+        if (product.stockQty < pieces) {
+          throw new Error(`Only ${product.stockQty} pcs of ${product.name} left in stock.`);
         }
         await dbi.products.put({
           ...product,
-          stockQty: product.stockQty - line.quantity,
+          stockQty: product.stockQty - pieces,
           updatedAt: nowIso,
           syncState: "pending",
         });
         await dbi.stockMovements.add({
           id: newId(),
-          productId: line.productId,
-          changeQty: -line.quantity,
+          productId,
+          changeQty: -pieces,
           reason: "sale",
           referenceId: sale.id,
           note: sale.receiptNo,
@@ -437,7 +459,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
     kind: "sale",
     message: `Sale ${sale.receiptNo}`,
     detail: [
-      `${items.reduce((sum, item) => sum + item.quantity, 0)} item(s)`,
+      `${items.reduce((sum, item) => sum + piecesOf(item), 0)} item(s)`,
       sale.paymentMethod,
       sale.customerName || "Walk-in",
     ].join(" · "),
@@ -479,14 +501,14 @@ export async function voidSale(saleId: string): Promise<void> {
       if (!product) continue;
       await dbi.products.put({
         ...product,
-        stockQty: product.stockQty + item.quantity,
+        stockQty: product.stockQty + piecesOf(item),
         updatedAt: now,
         syncState: "pending",
       });
       await dbi.stockMovements.add({
         id: newId(),
         productId: item.productId,
-        changeQty: item.quantity,
+        changeQty: piecesOf(item),
         reason: "refund",
         referenceId: sale.id,
         note: `Void ${sale.receiptNo}`,
