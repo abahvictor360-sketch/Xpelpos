@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Minus, Plus, Trash2 } from "lucide-react";
+import { Landmark, Minus, Plus, Trash2 } from "lucide-react";
 import Modal from "./Modal";
 import ProductSearch from "./ProductSearch";
 import CustomerPicker from "./CustomerPicker";
 import { toast } from "./Toaster";
 import { getDb } from "@/lib/db";
 import {
+  DEFAULT_PAYMENT_ACCOUNTS,
   accountKey,
-  accountNeedsApproval,
   describeAccount,
   invoiceTotals,
   loadDefaultAccount,
@@ -26,8 +26,6 @@ interface Props {
   onClose: () => void;
   onSaved: (invoice: Invoice) => void;
 }
-
-const EMPTY_ACCOUNT: PaymentAccount = { bankName: "", accountNumber: "", accountName: "" };
 
 /** Raise a new invoice, or change one that has not been paid or cancelled. */
 export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
@@ -47,15 +45,19 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
   const [notes, setNotes] = useState(invoice?.notes ?? "");
   const [accounts, setAccounts] = useState<PaymentAccount[]>([]);
   const [account, setAccount] = useState<PaymentAccount>(
-    invoice ? { bankName: invoice.bankName, accountNumber: invoice.accountNumber, accountName: invoice.accountName } : EMPTY_ACCOUNT,
+    invoice
+      ? { bankName: invoice.bankName, accountNumber: invoice.accountNumber, accountName: invoice.accountName }
+      : DEFAULT_PAYMENT_ACCOUNTS[0],
   );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void loadPaymentAccounts().then(setAccounts);
-    if (!invoice) {
-      void loadDefaultAccount().then((found) => found && setAccount(found));
-    }
+    void loadPaymentAccounts().then((list) => {
+      // An invoice keeps the account it was raised with, even if the admin has since removed it.
+      const kept = invoice && !list.some((a) => accountKey(a) === accountKey(invoice)) ? [invoice] : [];
+      setAccounts([...list, ...kept.map(({ bankName, accountNumber, accountName }) => ({ bankName, accountNumber, accountName }))]);
+    });
+    if (!invoice) void loadDefaultAccount().then(setAccount);
     if (invoice?.customerId) void getDb().customers.get(invoice.customerId).then((found) => found && setCustomer(found));
     const ids = (invoice?.items ?? []).map((line) => line.productId).filter(Boolean) as string[];
     if (ids.length) {
@@ -69,8 +71,6 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
 
   const rate = vatRate ?? store.vatRate;
   const totals = useMemo(() => invoiceTotals(items, Number(discount) || 0, rate), [items, discount, rate]);
-  const needsApproval = account.accountName.trim() !== "" && accountNeedsApproval(account);
-  const wasApproved = Boolean(invoice?.approvedAccount && invoice.approvedAccount === accountKey(account));
 
   const pickCustomer = (picked: Customer | null) => {
     setCustomer(picked);
@@ -96,6 +96,9 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
           productId: product.id,
           name: product.name,
           sku: product.sku,
+          brand: product.brand,
+          category: product.category,
+          barcode: product.barcode,
           unitPrice: product.price,
           quantity: 1,
           unit: "pcs",
@@ -131,10 +134,6 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
   };
 
   const save = async () => {
-    if (!customerName.trim()) {
-      toast("Enter who the invoice is for.", "error");
-      return;
-    }
     setSaving(true);
     try {
       const saved = await saveInvoice({
@@ -177,7 +176,21 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
     >
       <div className="space-y-5">
         <section>
-          <CustomerPicker selected={customer} onSelect={pickCustomer} />
+          <CustomerPicker
+            selected={customer}
+            onSelect={(picked) => {
+              pickCustomer(picked);
+              if (!picked) {
+                setCustomerName("");
+                setCustomerPhone("");
+                setCustomerEmail("");
+              }
+            }}
+            label="Bill to — choose a saved customer"
+            placeholder="Search customers by name or phone"
+            browse
+          />
+          <p className="mt-1 text-xs text-ink-700/50">Or fill in the details below; a new customer is saved for next time.</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="input" placeholder="Name on the invoice" aria-label="Customer name" />
             <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="input" placeholder="Phone (for WhatsApp)" inputMode="tel" aria-label="Customer phone" />
@@ -202,6 +215,10 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
                   <li key={`${line.productId}-${index}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 p-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-ink-900">{line.name}</p>
+                      <p className="truncate text-[11px] text-ink-700/50">
+                        {[line.sku, line.brand, line.category].filter(Boolean).join(" · ")}
+                        {line.unit === "carton" ? ` · carton of ${line.packSize} pcs` : ""}
+                      </p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <div className="flex items-center rounded-xl border border-black/10">
                           <button type="button" aria-label="Less" className="p-1.5" onClick={() => line.quantity > 1 && updateLine(index, { quantity: line.quantity - 1 })}>
@@ -278,42 +295,26 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
         </section>
 
         <section>
-          <h3 className="label">Pay into</h3>
-          {accounts.length > 0 && (
+          <h3 className="label">Customer pays into</h3>
+          <label className="flex items-center gap-2 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-3 py-1">
+            <Landmark size={16} className="shrink-0 text-brand-600" />
             <select
-              className="input"
-              value={accounts.findIndex((a) => accountKey(a) === accountKey(account))}
+              className="w-full bg-transparent py-2 text-sm font-semibold text-ink-900 outline-none"
+              value={accountKey(account)}
               onChange={(e) => {
-                const index = Number(e.target.value);
-                setAccount(index >= 0 ? accounts[index] : EMPTY_ACCOUNT);
+                const found = accounts.find((a) => accountKey(a) === e.target.value);
+                if (found) setAccount(found);
               }}
-              aria-label="Saved account"
+              aria-label="Payment account"
             >
-              {accounts.map((a, index) => (
-                <option key={accountKey(a)} value={index}>
+              {(accounts.length ? accounts : [account]).map((a) => (
+                <option key={accountKey(a)} value={accountKey(a)}>
                   {describeAccount(a)}
                 </option>
               ))}
-              <option value={-1}>Another account…</option>
             </select>
-          )}
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            <input value={account.bankName} onChange={(e) => setAccount({ ...account, bankName: e.target.value })} className="input" placeholder="Bank" aria-label="Bank name" />
-            <input value={account.accountNumber} onChange={(e) => setAccount({ ...account, accountNumber: e.target.value })} className="input tabular" placeholder="Account number" inputMode="numeric" aria-label="Account number" />
-            <input value={account.accountName} onChange={(e) => setAccount({ ...account, accountName: e.target.value })} className="input" placeholder="Account name" aria-label="Account name" />
-          </div>
-          {needsApproval && !wasApproved && (
-            <p className="mt-2 flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-xs text-amber-900">
-              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-              This account is not in Xpel&apos;s name. The admin will be emailed to approve it, and the invoice cannot be
-              printed or sent until they do.
-            </p>
-          )}
-          {needsApproval && wasApproved && (
-            <p className="mt-2 flex items-center gap-2 text-xs text-olive-800">
-              <CheckCircle2 size={14} /> The admin approved this account for this invoice.
-            </p>
-          )}
+          </label>
+          <p className="mt-1 text-xs text-ink-700/50">Only the admin can add account numbers, in Settings → Invoices.</p>
         </section>
 
         <label className="block">

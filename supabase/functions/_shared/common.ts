@@ -20,21 +20,6 @@ export function serviceClient(): SupabaseClient {
   });
 }
 
-/** Where the admin's approve / reject page lives. */
-export const DEFAULT_APP_URL = "https://xpel-pos.vercel.app";
-
-export async function getConfig(admin: SupabaseClient, key: string): Promise<string> {
-  const { data } = await admin.from("pos_config").select("value").eq("key", key).maybeSingle();
-  return data?.value ?? "";
-}
-
-export async function setConfig(admin: SupabaseClient, key: string, value: string): Promise<void> {
-  const { error } = await admin
-    .from("pos_config")
-    .upsert({ key, value, updated_at: new Date().toISOString() });
-  if (error) throw error;
-}
-
 export function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -49,16 +34,6 @@ export function naira(value: unknown): string {
 
 export function isEmail(value: unknown): value is string {
   return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-export async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export function newToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 export function emailReady(): boolean {

@@ -3,14 +3,19 @@
 import { loadStoreProfile } from "./store-profile";
 import { REPORT_COLOURS, XPEL_LOGO_DATA_URI } from "./brand-assets";
 import { REPORT_FONT_NAME, useReportFont } from "./report-font";
-import type { Invoice } from "./types";
-import { describeQuantity } from "./units";
+import type { Invoice, InvoiceLine } from "./types";
+import { piecesOf } from "./units";
 import { formatDate, formatDateTime, formatMoney } from "./utils";
 
 const rgb = (value: string): [number, number, number] => {
   const clean = value.replace("#", "");
   return [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16)) as [number, number, number];
 };
+
+/** SKU · brand · category: what tells one product from another on the page. */
+export function productDetails(item: InvoiceLine): string {
+  return [item.sku && `SKU ${item.sku}`, item.brand, item.category].filter(Boolean).join(" · ");
+}
 
 export type InvoiceDocumentKind = "invoice" | "payment";
 
@@ -54,36 +59,37 @@ export async function buildInvoicePdf(invoice: Invoice, kind: InvoiceDocumentKin
 
   // ---- Masthead ----------------------------------------------------------
   doc.setFillColor(...brand);
-  doc.rect(0, 0, pageWidth, 104, "F");
+  doc.rect(0, 0, pageWidth, 122, "F");
+  // The Xpel logo, large, on a white tile so it keeps its own colours.
   doc.setFillColor(255, 255, 255);
-  doc.roundedRect(margin, 24, 56, 56, 12, 12, "F");
-  doc.addImage(XPEL_LOGO_DATA_URI, "PNG", margin + 6, 30, 44, 44, undefined, "FAST");
+  doc.roundedRect(margin, 18, 86, 86, 14, 14, "F");
+  doc.addImage(XPEL_LOGO_DATA_URI, "PNG", margin + 6, 24, 74, 74, undefined, "FAST");
 
   doc.setTextColor(255, 255, 255);
   doc.setFont(REPORT_FONT_NAME, "bold");
   doc.setFontSize(17);
-  doc.text(store.name.toUpperCase(), margin + 70, 44);
+  doc.text(store.name.toUpperCase(), margin + 102, 50);
   doc.setFont(REPORT_FONT_NAME, "normal");
   doc.setFontSize(8.5);
-  const addressLines = (doc.splitTextToSize(store.address, 250) as string[]).slice(0, 2);
-  addressLines.forEach((text, index) => doc.text(text, margin + 70, 58 + index * 11));
-  doc.text([store.phone && `Tel: ${store.phone}`, store.website].filter(Boolean).join("   ·   "), margin + 70, 58 + addressLines.length * 11);
+  const addressLines = (doc.splitTextToSize(store.address, 230) as string[]).slice(0, 2);
+  addressLines.forEach((text, index) => doc.text(text, margin + 102, 66 + index * 11));
+  doc.text([store.phone && `Tel: ${store.phone}`, store.website].filter(Boolean).join("   ·   "), margin + 102, 66 + addressLines.length * 11);
 
   doc.setFont(REPORT_FONT_NAME, "bold");
   doc.setFontSize(22);
-  doc.text(kind === "payment" ? "RECEIPT" : "INVOICE", pageWidth - margin, 48, { align: "right" });
+  doc.text(kind === "payment" ? "RECEIPT" : "INVOICE", pageWidth - margin, 54, { align: "right" });
   doc.setFont(REPORT_FONT_NAME, "normal");
   doc.setFontSize(9.5);
-  doc.text(invoice.invoiceNo, pageWidth - margin, 64, { align: "right" });
+  doc.text(invoice.invoiceNo, pageWidth - margin, 72, { align: "right" });
   doc.text(
     kind === "payment" ? "Payment confirmation" : `Issued ${formatDate(invoice.issuedAt)}`,
     pageWidth - margin,
-    78,
+    86,
     { align: "right" },
   );
 
   // ---- Bill to / details -------------------------------------------------
-  let y = 136;
+  let y = 154;
   doc.setTextColor(...muted);
   doc.setFontSize(8);
   doc.setFont(REPORT_FONT_NAME, "bold");
@@ -119,28 +125,71 @@ export async function buildInvoicePdf(invoice: Invoice, kind: InvoiceDocumentKin
   y += Math.max(30 + billLines.length * 12, 16 + details.length * 13) + 18;
 
   // ---- Items -------------------------------------------------------------
+  const pieces = invoice.items.reduce((sum, item) => sum + piecesOf(item), 0);
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin },
-    head: [["#", "Item", "Qty", "Unit price", "Amount"]],
+    head: [["#", "Product", "Unit", "Qty", "Unit price", "Amount"]],
     body: invoice.items.map((item, index) => [
       String(index + 1),
-      item.sku ? `${item.name}\n${item.sku}` : item.name,
-      describeQuantity(item),
+      [item.name, productDetails(item), item.barcode ? `Barcode ${item.barcode}` : ""].filter(Boolean).join("\n"),
+      item.unit === "carton" ? `Carton\n(${item.packSize} pcs)` : "Pcs",
+      item.unit === "carton" ? `${item.quantity}\n= ${piecesOf(item)} pcs` : String(item.quantity),
       formatMoney(item.unitPrice),
       formatMoney(item.lineTotal),
     ]),
-    styles: { font: REPORT_FONT_NAME, fontSize: 9, textColor: ink, cellPadding: 6, lineColor: line, lineWidth: 0 },
+    foot: [["", `${invoice.items.length} product${invoice.items.length === 1 ? "" : "s"} · ${pieces} pcs in total`, "", "", "", formatMoney(invoice.subtotal)]],
+    styles: { font: REPORT_FONT_NAME, fontSize: 9, textColor: ink, cellPadding: 6, lineColor: line, lineWidth: 0, valign: "middle" },
     headStyles: { fillColor: ink, textColor: [255, 255, 255], fontStyle: "bold" },
+    footStyles: { fillColor: tint, textColor: ink, fontStyle: "bold" },
     alternateRowStyles: { fillColor: rgb(REPORT_COLOURS.zebra) },
     columnStyles: {
-      0: { cellWidth: 24, halign: "center" },
-      2: { cellWidth: 70, halign: "right" },
-      3: { cellWidth: 90, halign: "right" },
-      4: { cellWidth: 96, halign: "right" },
+      0: { cellWidth: 22, halign: "center" },
+      2: { cellWidth: 56, halign: "center" },
+      3: { cellWidth: 52, halign: "right" },
+      4: { cellWidth: 80, halign: "right" },
+      5: { cellWidth: 86, halign: "right" },
     },
     didParseCell: (data) => {
-      if (data.section === "head" && data.column.index >= 2) data.cell.styles.halign = "right";
+      if (data.section !== "body" && data.column.index === 2) data.cell.styles.halign = "center";
+      if (data.section !== "body" && data.column.index >= 3) data.cell.styles.halign = "right";
+      if (data.section === "body" && data.column.index === 5) data.cell.styles.fontStyle = "bold";
+    },
+    willDrawCell: (data) => {
+      // The table sized the product cell for its text; it is drawn below with the name in bold.
+      if (data.section === "body" && data.column.index === 1) data.cell.text = [];
+    },
+    didDrawCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 1) return;
+      const item = invoice.items[data.row.index];
+      if (!item) return;
+      const width = data.cell.width - 12;
+      doc.setFont(REPORT_FONT_NAME, "bold");
+      doc.setFontSize(9.5);
+      const nameLines = doc.splitTextToSize(item.name, width) as string[];
+      doc.setFont(REPORT_FONT_NAME, "normal");
+      doc.setFontSize(8);
+      const detailLines = [productDetails(item), item.barcode ? `Barcode ${item.barcode}` : ""]
+        .filter(Boolean)
+        .flatMap((text) => doc.splitTextToSize(text, width) as string[]);
+      const blockHeight = nameLines.length * 11 + detailLines.length * 10;
+      let lineY = data.cell.y + (data.cell.height - blockHeight) / 2 + 8;
+      doc.setFont(REPORT_FONT_NAME, "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...ink);
+      nameLines.forEach((text) => {
+        doc.text(text, data.cell.x + 6, lineY);
+        lineY += 11;
+      });
+      doc.setFont(REPORT_FONT_NAME, "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...muted);
+      detailLines.forEach((text) => {
+        doc.text(text, data.cell.x + 6, lineY);
+        lineY += 10;
+      });
+      doc.setFontSize(9);
+      doc.setTextColor(...ink);
     },
   });
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 14;
@@ -154,7 +203,9 @@ export async function buildInvoicePdf(invoice: Invoice, kind: InvoiceDocumentKin
   };
 
   // ---- Totals --------------------------------------------------------------
-  const totals: Array<[string, string, boolean]> = [["Subtotal", formatMoney(invoice.subtotal), false]];
+  // The table's last row already carries the subtotal; repeat it only when something is taken off or added.
+  const totals: Array<[string, string, boolean]> =
+    invoice.discount > 0 || invoice.tax > 0 ? [["Subtotal", formatMoney(invoice.subtotal), false]] : [];
   if (invoice.discount > 0) totals.push(["Discount", `- ${formatMoney(invoice.discount)}`, false]);
   if (invoice.tax > 0) totals.push(["VAT", formatMoney(invoice.tax), false]);
   ensureRoom(totals.length * 16 + 40);

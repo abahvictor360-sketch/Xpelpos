@@ -226,12 +226,16 @@ export interface CartLine {
   packSize?: number;
 }
 
-export type InvoiceStatus = "awaiting_approval" | "rejected" | "ready" | "sent" | "paid" | "cancelled";
+export type InvoiceStatus = "ready" | "sent" | "paid" | "cancelled";
 
 export interface InvoiceLine {
   productId: string | null;
   name: string;
   sku: string;
+  /** Product details printed under the name; unset on lines saved before they were kept. */
+  brand?: string;
+  category?: string;
+  barcode?: string;
   /** Price of one `unit` — a piece, or a whole carton. */
   unitPrice: number;
   quantity: number;
@@ -248,9 +252,8 @@ export interface PaymentAccount {
 }
 
 /**
- * A bill sent to a customer to pay by transfer. When the payment account is not
- * in Xpel's name the admin must approve it by email first; until then the
- * invoice is held at "awaiting_approval" and cannot be sent.
+ * A bill sent to a customer to pay by transfer, into one of the accounts the
+ * admin has set up. Kept in the till's own database and synced like sales.
  */
 export interface Invoice extends PaymentAccount {
   id: string;
@@ -270,11 +273,6 @@ export interface Invoice extends PaymentAccount {
   issuedAt: string;
   /** yyyy-mm-dd, or "" for none. */
   dueDate: string;
-  needsApproval: boolean;
-  /** The account (see accountKey) the admin approved, or null. */
-  approvedAccount: string | null;
-  approvedAt: string | null;
-  approvalRequestedAt: string | null;
   sentAt: string | null;
   paidAt: string | null;
   paidAmount: number;

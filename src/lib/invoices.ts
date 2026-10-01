@@ -2,33 +2,28 @@
 
 import { getDb, getSetting, setSetting } from "./db";
 import { logActivity } from "./activity";
-import { getDeviceId } from "./repository";
+import { getDeviceId, saveCustomer } from "./repository";
 import { getSupabase } from "./supabase";
 import { syncNow } from "./sync";
 import type { Invoice, InvoiceLine, InvoiceStatus, PaymentAccount } from "./types";
 import { buildReceiptNo, newId, round2 } from "./utils";
 
 /* ------------------------------------------------------------------ */
-/* Payment accounts and the approval rule                              */
+/* Payment accounts                                                    */
 /* ------------------------------------------------------------------ */
 
-/**
- * Xpel's own account, offered on every new invoice. Accounts in Xpel's name
- * never need the admin's approval.
- */
-export const DEFAULT_PAYMENT_ACCOUNTS: PaymentAccount[] = [];
+/** Xpel's own account: on every till, the default on every new invoice. */
+export const DEFAULT_PAYMENT_ACCOUNTS: PaymentAccount[] = [
+  { bankName: "FIDELITY BANK", accountNumber: "5620075648", accountName: "XPEL PHARMACEUTICAL LTD" },
+];
 
 const ACCOUNTS_KEY = "invoice_accounts";
 const DEFAULT_ACCOUNT_KEY = "invoice_default_account";
+const ADMIN_PIN_KEY = "admin_pin_hash";
 
-/** Any account whose name does not carry "Xpel" must be approved by the admin. */
-export function accountNeedsApproval(account: Pick<PaymentAccount, "accountName">): boolean {
-  return !/xpel/i.test(account.accountName ?? "");
-}
-
-/** Mirrors pos_invoice_account_key in the database: what an approval covers. */
+/** What tells two accounts apart: bank, the digits of the number, and the name. */
 export function accountKey(account: PaymentAccount): string {
-  const squash = (value: string) => (value ?? "").replace(/\s+/g, " ").toLowerCase();
+  const squash = (value: string) => (value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
   return `${squash(account.bankName)}|${(account.accountNumber ?? "").replace(/\D/g, "")}|${squash(account.accountName)}`;
 }
 
@@ -36,11 +31,15 @@ export function sameAccount(a: PaymentAccount, b: PaymentAccount): boolean {
   return accountKey(a) === accountKey(b);
 }
 
+export function isBuiltInAccount(account: PaymentAccount): boolean {
+  return DEFAULT_PAYMENT_ACCOUNTS.some((built) => sameAccount(built, account));
+}
+
 export function describeAccount(account: PaymentAccount): string {
   return [account.accountName, account.bankName, account.accountNumber].filter(Boolean).join(" · ");
 }
 
-/** Saved accounts on this till, Xpel's defaults first. */
+/** The accounts invoices can be paid into: Xpel's own first, then any the admin added. */
 export async function loadPaymentAccounts(): Promise<PaymentAccount[]> {
   let saved: PaymentAccount[] = [];
   try {
@@ -56,68 +55,99 @@ export async function loadPaymentAccounts(): Promise<PaymentAccount[]> {
   return all;
 }
 
-export async function savePaymentAccounts(accounts: PaymentAccount[]): Promise<void> {
-  const own = accounts.filter((a) => !DEFAULT_PAYMENT_ACCOUNTS.some((d) => sameAccount(d, a)));
-  await setSetting(ACCOUNTS_KEY, JSON.stringify(own));
+async function saveAccountList(accounts: PaymentAccount[]): Promise<void> {
+  await setSetting(ACCOUNTS_KEY, JSON.stringify(accounts.filter((a) => !isBuiltInAccount(a))));
 }
 
-/** The account a new invoice starts with. */
-export async function loadDefaultAccount(): Promise<PaymentAccount | null> {
+/** The account a new invoice starts with: the admin's choice, else Xpel's own. */
+export async function loadDefaultAccount(): Promise<PaymentAccount> {
   const accounts = await loadPaymentAccounts();
   const key = await getSetting(DEFAULT_ACCOUNT_KEY);
-  return accounts.find((a) => accountKey(a) === key) ?? accounts[0] ?? null;
+  return accounts.find((a) => accountKey(a) === key) ?? DEFAULT_PAYMENT_ACCOUNTS[0];
 }
 
-export async function setDefaultAccount(account: PaymentAccount): Promise<void> {
-  await setSetting(DEFAULT_ACCOUNT_KEY, accountKey(account));
+/* ------------------------------------------------------------------ */
+/* Admin PIN: only the admin adds, removes or changes payment accounts */
+/* ------------------------------------------------------------------ */
+
+async function hashPin(pin: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`xpel-admin:${pin}`));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Adds an account to the saved list the first time it is used. */
-async function rememberAccount(account: PaymentAccount): Promise<void> {
-  if (!account.accountNumber.trim()) return;
+export async function hasAdminPin(): Promise<boolean> {
+  return Boolean(await getSetting(ADMIN_PIN_KEY));
+}
+
+export async function checkAdminPin(pin: string): Promise<boolean> {
+  const stored = await getSetting(ADMIN_PIN_KEY);
+  return Boolean(stored) && stored === (await hashPin(pin.trim()));
+}
+
+/** Sets the PIN the first time, or changes it when the current PIN is given. */
+export async function setAdminPin(newPin: string, currentPin = ""): Promise<void> {
+  const pin = newPin.trim();
+  if (!/^\d{4,8}$/.test(pin)) throw new Error("Use 4 to 8 digits for the admin PIN.");
+  if ((await hasAdminPin()) && !(await checkAdminPin(currentPin))) throw new Error("The current admin PIN is wrong.");
+  await setSetting(ADMIN_PIN_KEY, await hashPin(pin));
+  await logActivity({ kind: "system", message: "Admin PIN set" });
+}
+
+async function requireAdmin(pin: string): Promise<void> {
+  if (!(await checkAdminPin(pin))) throw new Error("Wrong admin PIN.");
+}
+
+export async function addPaymentAccount(account: PaymentAccount, pin: string): Promise<void> {
+  await requireAdmin(pin);
+  const clean: PaymentAccount = {
+    bankName: account.bankName.trim(),
+    accountNumber: account.accountNumber.replace(/\s+/g, ""),
+    accountName: account.accountName.trim(),
+  };
+  if (!clean.bankName || !clean.accountName || !/^\d{10}$/.test(clean.accountNumber)) {
+    throw new Error("Enter the bank, a 10-digit account number and the account name.");
+  }
   const accounts = await loadPaymentAccounts();
-  if (accounts.some((a) => sameAccount(a, account))) return;
-  await savePaymentAccounts([...accounts, account]);
+  if (accounts.some((a) => sameAccount(a, clean))) throw new Error("That account is already saved.");
+  await saveAccountList([...accounts, clean]);
+  await logActivity({ kind: "system", message: "Admin added a payment account", detail: describeAccount(clean) });
+}
+
+export async function removePaymentAccount(account: PaymentAccount, pin: string): Promise<void> {
+  await requireAdmin(pin);
+  if (isBuiltInAccount(account)) throw new Error("Xpel's own account cannot be removed.");
+  const accounts = await loadPaymentAccounts();
+  await saveAccountList(accounts.filter((a) => !sameAccount(a, account)));
+  if ((await getSetting(DEFAULT_ACCOUNT_KEY)) === accountKey(account)) await setSetting(DEFAULT_ACCOUNT_KEY, "");
+  await logActivity({ kind: "system", message: "Admin removed a payment account", detail: describeAccount(account) });
+}
+
+export async function setDefaultAccount(account: PaymentAccount, pin: string): Promise<void> {
+  await requireAdmin(pin);
+  await setSetting(DEFAULT_ACCOUNT_KEY, accountKey(account));
 }
 
 /* ------------------------------------------------------------------ */
 /* Status                                                              */
 /* ------------------------------------------------------------------ */
 
-export function isApproved(invoice: Invoice): boolean {
-  return !accountNeedsApproval(invoice) || invoice.approvedAccount === accountKey(invoice);
-}
-
-/** Only an approved, live invoice may be printed, downloaded or sent. */
 export function canShare(invoice: Invoice): boolean {
-  return ["ready", "sent", "paid"].includes(invoice.status) && isApproved(invoice);
+  return invoice.status !== "cancelled";
 }
 
 export const STATUS_LABEL: Record<InvoiceStatus, string> = {
-  awaiting_approval: "Awaiting approval",
-  rejected: "Account rejected",
-  ready: "Ready to send",
+  ready: "Not sent yet",
   sent: "Sent",
   paid: "Paid",
   cancelled: "Cancelled",
 };
 
 export const STATUS_TONE: Record<InvoiceStatus, string> = {
-  awaiting_approval: "bg-amber-100 text-amber-800",
-  rejected: "bg-red-100 text-red-700",
   ready: "bg-sky-100 text-sky-800",
   sent: "bg-brand-50 text-brand-700",
   paid: "bg-olive-100 text-olive-900",
   cancelled: "bg-black/[0.05] text-ink-700/60",
 };
-
-/** What status an invoice should hold, given its account and what has happened to it. */
-function settleStatus(invoice: Invoice, wanted: InvoiceStatus): InvoiceStatus {
-  if (wanted === "cancelled") return "cancelled";
-  if (!isApproved(invoice)) return invoice.status === "rejected" && wanted !== "awaiting_approval" ? "rejected" : "awaiting_approval";
-  if (wanted === "awaiting_approval" || wanted === "rejected") return "ready";
-  return wanted;
-}
 
 /* ------------------------------------------------------------------ */
 /* Saving                                                              */
@@ -158,44 +188,52 @@ export interface InvoiceDraft extends PaymentAccount {
 }
 
 export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
+  if (!draft.customerName.trim()) throw new Error("Enter who the invoice is for.");
   if (draft.items.length === 0) throw new Error("Add at least one item.");
-  if (!draft.accountNumber.trim() || !draft.accountName.trim() || !draft.bankName.trim()) {
-    throw new Error("Enter the bank, account number and account name the customer should pay into.");
-  }
   const db = getDb();
-  const now = new Date().toISOString();
-  const existing = draft.id ? await db.invoices.get(draft.id) : undefined;
-  if (existing && (existing.status === "paid" || existing.status === "cancelled")) {
-    throw new Error("A paid or cancelled invoice cannot be changed.");
-  }
-  const deviceId = existing?.deviceId || (await getDeviceId());
-  const totals = invoiceTotals(draft.items, draft.discount, draft.vatRate);
   const account: PaymentAccount = {
     bankName: draft.bankName.trim(),
     accountNumber: draft.accountNumber.replace(/\s+/g, ""),
     accountName: draft.accountName.trim(),
   };
-  const accountChanged = existing ? !sameAccount(existing, account) : true;
+  const now = new Date().toISOString();
+  const existing = draft.id ? await db.invoices.get(draft.id) : undefined;
+  // Staff choose from the admin's accounts; they cannot type in their own.
+  const keptAccount = existing ? sameAccount(existing, account) : false;
+  if (!keptAccount && !(await loadPaymentAccounts()).some((a) => sameAccount(a, account))) {
+    throw new Error("Choose one of the payment accounts the admin has set up.");
+  }
+  if (existing && (existing.status === "paid" || existing.status === "cancelled")) {
+    throw new Error("A paid or cancelled invoice cannot be changed.");
+  }
+  const deviceId = existing?.deviceId || (await getDeviceId());
+
+  // A new name gets saved as a customer, so next time it can be picked from the list.
+  let customerId = draft.customerId;
+  if (!customerId) {
+    const customer = await saveCustomer({
+      name: draft.customerName,
+      phone: draft.customerPhone,
+      email: draft.customerEmail,
+    });
+    customerId = customer.id;
+  }
 
   const invoice: Invoice = {
     id: existing?.id ?? newId(),
     invoiceNo: existing?.invoiceNo ?? (await nextInvoiceNo(deviceId)),
     status: existing?.status ?? "ready",
-    customerId: draft.customerId,
+    customerId,
     customerName: draft.customerName.trim(),
     customerPhone: draft.customerPhone.trim(),
     customerEmail: draft.customerEmail.trim(),
     customerAddress: draft.customerAddress.trim(),
     items: draft.items.map((line) => ({ ...line, lineTotal: round2(line.unitPrice * line.quantity) })),
-    ...totals,
+    ...invoiceTotals(draft.items, draft.discount, draft.vatRate),
     notes: draft.notes.trim(),
     issuedAt: existing?.issuedAt ?? now,
     dueDate: draft.dueDate,
     ...account,
-    needsApproval: accountNeedsApproval(account),
-    approvedAccount: accountChanged ? null : existing?.approvedAccount ?? null,
-    approvedAt: accountChanged ? null : existing?.approvedAt ?? null,
-    approvalRequestedAt: accountChanged ? null : existing?.approvalRequestedAt ?? null,
     sentAt: existing?.sentAt ?? null,
     paidAt: null,
     paidAmount: 0,
@@ -207,17 +245,12 @@ export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
     deletedAt: null,
     syncState: "pending",
   };
-  if (accountChanged && invoice.status === "rejected") invoice.status = "awaiting_approval";
-  invoice.status = settleStatus(invoice, invoice.status === "sent" ? "sent" : "ready");
 
   await db.invoices.put(invoice);
-  await rememberAccount(account);
   await logActivity({
     kind: "invoice",
     message: `${existing ? "Updated" : "Raised"} invoice ${invoice.invoiceNo}`,
-    detail: [invoice.customerName, invoice.needsApproval ? `pay to ${invoice.accountName} — needs admin approval` : ""]
-      .filter(Boolean)
-      .join(" · "),
+    detail: invoice.customerName,
     amount: invoice.total,
     referenceId: invoice.id,
     staffName: invoice.createdBy,
@@ -235,7 +268,7 @@ async function patchInvoice(id: string, patch: Partial<Invoice>): Promise<Invoic
 }
 
 export async function markInvoiceSent(invoice: Invoice): Promise<Invoice> {
-  if (!canShare(invoice) || invoice.status !== "ready") return invoice;
+  if (invoice.status !== "ready") return invoice;
   return patchInvoice(invoice.id, { status: "sent", sentAt: invoice.sentAt ?? new Date().toISOString() });
 }
 
@@ -243,7 +276,7 @@ export async function confirmInvoicePayment(
   invoice: Invoice,
   payment: { amount: number; reference: string; paidAt: string },
 ): Promise<Invoice> {
-  if (!canShare(invoice)) throw new Error("Only an approved invoice can be marked as paid.");
+  if (invoice.status === "cancelled") throw new Error("A cancelled invoice cannot be paid.");
   if (!(payment.amount > 0)) throw new Error("Enter the amount received.");
   const next = await patchInvoice(invoice.id, {
     status: "paid",
@@ -274,14 +307,8 @@ export async function cancelInvoice(invoice: Invoice): Promise<Invoice> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Cloud: approval and email                                           */
+/* Email (through the cloud)                                           */
 /* ------------------------------------------------------------------ */
-
-export interface MailStatus {
-  emailReady: boolean;
-  adminEmail: string;
-  pendingAdminEmail: string;
-}
 
 async function callMail<T>(body: Record<string, unknown>): Promise<T> {
   const supabase = getSupabase();
@@ -303,46 +330,6 @@ async function callMail<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export function getMailStatus(): Promise<MailStatus> {
-  return callMail<MailStatus>({ action: "status" });
-}
-
-export function setAdminEmail(email: string): Promise<{ adminEmail: string; pending: boolean; pendingAdminEmail?: string }> {
-  return callMail({ action: "set-admin-email", email });
-}
-
-/** Uploads the invoice, then has the cloud email the admin for approval. */
-export async function requestApproval(invoice: Invoice): Promise<{ needed: boolean; sentTo?: string }> {
-  const report = await syncNow();
-  if (!report.ok) throw new Error(report.message);
-  const result = await callMail<{ needed: boolean; status: InvoiceStatus; sentTo?: string }>({
-    action: "request-approval",
-    invoiceId: invoice.id,
-  });
-  if (result.needed) {
-    // Asking again after a rejection puts the invoice back in the queue.
-    const current = await getDb().invoices.get(invoice.id);
-    if (current && current.status === "rejected") {
-      await getDb().invoices.put({ ...current, status: "awaiting_approval", approvalRequestedAt: new Date().toISOString() });
-    }
-    await logActivity({
-      kind: "invoice",
-      message: `Asked the admin to approve invoice ${invoice.invoiceNo}`,
-      detail: `${invoice.accountName} · ${invoice.bankName} ${invoice.accountNumber}`,
-      referenceId: invoice.id,
-    });
-  }
-  await syncNow();
-  return result;
-}
-
-/** Pulls the latest approval decisions from the cloud. */
-export async function refreshInvoices(): Promise<string> {
-  const report = await syncNow();
-  if (!report.ok) throw new Error(report.message);
-  return report.message;
-}
-
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -356,6 +343,7 @@ export async function emailInvoice(
   invoice: Invoice,
   options: { to: string; message: string; pdf: Blob; filename: string; kind: "invoice" | "payment" },
 ): Promise<void> {
+  // The cloud copy must exist before the cloud can email it.
   const report = await syncNow();
   if (!report.ok) throw new Error(report.message);
   await callMail({

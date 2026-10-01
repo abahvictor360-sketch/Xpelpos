@@ -7,7 +7,8 @@ import InvoiceEditor from "@/components/InvoiceEditor";
 import InvoiceDetail from "@/components/InvoiceDetail";
 import { toast } from "@/components/Toaster";
 import { getDb } from "@/lib/db";
-import { STATUS_LABEL, STATUS_TONE, isApproved, refreshInvoices, requestApproval } from "@/lib/invoices";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/invoices";
+import { syncNow } from "@/lib/sync";
 import type { Invoice, InvoiceStatus } from "@/lib/types";
 import { cx, formatDate, formatMoney } from "@/lib/utils";
 
@@ -16,7 +17,6 @@ type Filter = "all" | "open" | InvoiceStatus;
 const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: "all", label: "All" },
   { id: "open", label: "Unpaid" },
-  { id: "awaiting_approval", label: "Awaiting approval" },
   { id: "paid", label: "Paid" },
   { id: "cancelled", label: "Cancelled" },
 ];
@@ -34,15 +34,15 @@ export default function InvoicesPage() {
 
   const open = invoices?.find((invoice) => invoice.id === openId) ?? null;
 
-  // Pick up the admin's decisions when the page opens.
+  // Pick up invoices raised on the other tills.
   useEffect(() => {
-    void refreshInvoices().catch(() => {});
+    void syncNow();
   }, []);
 
   const shown = useMemo(() => {
     const needle = term.trim().toLowerCase();
     return (invoices ?? []).filter((invoice) => {
-      if (filter === "open" && !["ready", "sent", "awaiting_approval", "rejected"].includes(invoice.status)) return false;
+      if (filter === "open" && !["ready", "sent"].includes(invoice.status)) return false;
       if (filter !== "all" && filter !== "open" && invoice.status !== filter) return false;
       if (!needle) return true;
       return [invoice.invoiceNo, invoice.customerName, invoice.customerPhone, invoice.accountName]
@@ -55,30 +55,14 @@ export default function InvoicesPage() {
   const outstanding = (invoices ?? [])
     .filter((invoice) => invoice.status === "ready" || invoice.status === "sent")
     .reduce((sum, invoice) => sum + invoice.total, 0);
-  const awaiting = (invoices ?? []).filter((invoice) => invoice.status === "awaiting_approval").length;
+  const paidTotal = (invoices ?? [])
+    .filter((invoice) => invoice.status === "paid")
+    .reduce((sum, invoice) => sum + (invoice.paidAmount || invoice.total), 0);
 
-  const onSaved = async (invoice: Invoice) => {
+  const onSaved = (invoice: Invoice) => {
     setEditing(null);
     setOpenId(invoice.id);
-    if (isApproved(invoice)) {
-      toast(`Invoice ${invoice.invoiceNo} saved.`, "success");
-      return;
-    }
-    // A new or changed account goes to the admin straight away when online.
-    try {
-      const result = await requestApproval(invoice);
-      toast(
-        result.needed
-          ? `Saved. The admin (${result.sentTo}) has been emailed to approve ${invoice.accountName}'s account.`
-          : `Invoice ${invoice.invoiceNo} saved.`,
-        "success",
-      );
-    } catch (error) {
-      toast(
-        `Saved, but the approval request was not sent: ${String(error instanceof Error ? error.message : error).replace(/\.+$/, "")}. Open the invoice to try again.`,
-        "error",
-      );
-    }
+    toast(`Invoice ${invoice.invoiceNo} saved.`, "success");
   };
 
   return (
@@ -90,7 +74,8 @@ export default function InvoicesPage() {
             onClick={async () => {
               setRefreshing(true);
               try {
-                toast(await refreshInvoices(), "info");
+                const report = await syncNow();
+                toast(report.message, report.ok ? "info" : "error");
               } catch (error) {
                 toast(error instanceof Error ? error.message : String(error), "error");
               } finally {
@@ -98,7 +83,7 @@ export default function InvoicesPage() {
               }
             }}
             className="btn-ghost"
-            aria-label="Check for approvals"
+            aria-label="Sync invoices"
           >
             <RefreshCw size={16} className={cx(refreshing && "animate-spin")} />
           </button>
@@ -118,8 +103,8 @@ export default function InvoicesPage() {
           <p className="mt-1 text-2xl font-bold tabular">{formatMoney(outstanding)}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-700/55">Awaiting admin approval</p>
-          <p className={cx("mt-1 text-2xl font-bold tabular", awaiting > 0 && "text-amber-700")}>{awaiting}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-700/55">Paid</p>
+          <p className="mt-1 text-2xl font-bold tabular text-olive-800">{formatMoney(paidTotal)}</p>
         </div>
       </div>
 
@@ -208,7 +193,7 @@ export default function InvoicesPage() {
         <InvoiceEditor
           invoice={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={(invoice) => void onSaved(invoice)}
+          onSaved={onSaved}
         />
       )}
     </div>

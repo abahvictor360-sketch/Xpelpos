@@ -2,20 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Ban,
-  BadgeCheck,
-  Clock,
-  Download,
-  Loader2,
-  Mail,
-  MessageCircle,
-  Pencil,
-  Printer,
-  RefreshCw,
-  Send,
-  ShieldAlert,
-} from "lucide-react";
+import { Ban, BadgeCheck, Clock, Download, Loader2, Mail, MessageCircle, Pencil, Printer, Send } from "lucide-react";
 import Modal from "./Modal";
 import InvoiceSheet from "./InvoiceSheet";
 import { toast } from "./Toaster";
@@ -27,8 +14,6 @@ import {
   confirmInvoicePayment,
   emailInvoice,
   markInvoiceSent,
-  refreshInvoices,
-  requestApproval,
   whatsappNumber,
 } from "@/lib/invoices";
 import { buildInvoicePdf, downloadBlob, invoiceFilename, type InvoiceDocumentKind } from "@/lib/invoice-pdf";
@@ -43,7 +28,7 @@ interface Props {
   onEdit: () => void;
 }
 
-type Busy = "" | "approval" | "refresh" | "whatsapp" | "email" | "download" | "print" | "pay" | "cancel";
+type Busy = "" | "whatsapp" | "email" | "download" | "print" | "pay" | "cancel";
 
 /** One invoice: the A4 preview, where it stands, and everything that can be done with it. */
 export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
@@ -69,15 +54,6 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
       setBusy("");
     }
   };
-
-  const askApproval = () =>
-    run("approval", async () => {
-      const result = await requestApproval(invoice);
-      toast(
-        result.needed ? `Approval request emailed to ${result.sentTo}.` : "No approval is needed for this account.",
-        "success",
-      );
-    });
 
   const message = (kind: InvoiceDocumentKind) =>
     kind === "payment"
@@ -135,21 +111,6 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
           <StatusBanner invoice={invoice} />
 
           <div className="flex flex-wrap gap-2">
-            {(invoice.status === "awaiting_approval" || invoice.status === "rejected") && (
-              <button onClick={() => void askApproval()} disabled={Boolean(busy)} className="btn-primary">
-                {busy === "approval" ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                {invoice.status === "rejected" || invoice.approvalRequestedAt ? "Ask the admin again" : "Ask the admin to approve"}
-              </button>
-            )}
-            {(invoice.status === "awaiting_approval" || invoice.status === "rejected") && (
-              <button
-                onClick={() => void run("refresh", async () => toast(await refreshInvoices(), "info"))}
-                disabled={Boolean(busy)}
-                className="btn-ghost"
-              >
-                <RefreshCw size={16} className={cx(busy === "refresh" && "animate-spin")} /> Check for a decision
-              </button>
-            )}
             {shareable && (
               <>
                 <button onClick={() => void shareWhatsApp()} disabled={Boolean(busy)} className="btn-primary">
@@ -188,10 +149,10 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
           <div className="overflow-x-auto rounded-2xl border border-black/[0.06] bg-black/[0.02] p-2 sm:p-4">
             <div className="relative min-w-[560px]">
               <InvoiceSheet invoice={invoice} className="rounded-xl p-6 shadow-card" />
-              {!shareable && invoice.status !== "cancelled" && (
+              {invoice.status === "cancelled" && (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/50">
-                  <span className="rotate-[-12deg] rounded-xl border-4 border-amber-600/70 px-4 py-1 text-2xl font-black uppercase tracking-widest text-amber-700/80">
-                    {invoice.status === "rejected" ? "Not approved" : "Awaiting approval"}
+                  <span className="rotate-[-12deg] rounded-xl border-4 border-red-600/60 px-4 py-1 text-2xl font-black uppercase tracking-widest text-red-700/70">
+                    Cancelled
                   </span>
                 </div>
               )}
@@ -222,19 +183,9 @@ function StatusBanner({ invoice }: { invoice: Invoice }) {
   let text = "";
   let Icon = Clock;
   switch (invoice.status) {
-    case "awaiting_approval":
-      Icon = ShieldAlert;
-      text = invoice.approvalRequestedAt
-        ? `Waiting for the admin to approve ${invoice.accountName}'s account (asked ${formatDateTime(invoice.approvalRequestedAt)}). It cannot be printed or sent until then.`
-        : `${invoice.accountName}'s account is not in Xpel's name, so the admin must approve it before this invoice can be printed or sent.`;
-      break;
-    case "rejected":
-      Icon = Ban;
-      text = "The admin rejected this payment account. Change the account, or ask the admin again.";
-      break;
     case "ready":
       Icon = BadgeCheck;
-      text = `Ready to send · ${formatMoney(invoice.total)} due${invoice.dueDate ? ` by ${new Date(invoice.dueDate).toLocaleDateString("en-NG", { day: "2-digit", month: "short" })}` : ""}.`;
+      text = `${formatMoney(invoice.total)} due${invoice.dueDate ? ` by ${new Date(invoice.dueDate).toLocaleDateString("en-NG", { day: "2-digit", month: "short" })}` : ""}. Send it by WhatsApp or email, or print it on A4.`;
       break;
     case "sent":
       Icon = Send;

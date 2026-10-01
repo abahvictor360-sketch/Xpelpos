@@ -9,6 +9,10 @@ import { cx } from "@/lib/utils";
 interface Props {
   selected: Customer | null;
   onSelect: (customer: Customer | null) => void;
+  label?: string;
+  placeholder?: string;
+  /** List saved customers as soon as the field is focused, before anything is typed. */
+  browse?: boolean;
 }
 
 /**
@@ -17,7 +21,7 @@ interface Props {
  * creating a second record for them. Codes are shown because two customers can
  * share a name.
  */
-export default function CustomerPicker({ selected, onSelect }: Props) {
+export default function CustomerPicker({ selected, onSelect, label = "Customer", placeholder = "Walk-in", browse = false }: Props) {
   const [term, setTerm] = useState("");
   const [matches, setMatches] = useState<Customer[]>([]);
   const [open, setOpen] = useState(false);
@@ -26,18 +30,18 @@ export default function CustomerPicker({ selected, onSelect }: Props) {
   const wrapper = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!term.trim()) {
+    if (!term.trim() && !browse) {
       setMatches([]);
       return;
     }
     let active = true;
-    void searchCustomers(term, 6).then((rows) => {
+    void searchCustomers(term, browse ? 8 : 6).then((rows) => {
       if (active) setMatches(rows);
     });
     return () => {
       active = false;
     };
-  }, [term]);
+  }, [term, browse]);
 
   useEffect(() => {
     const onClickAway = (event: MouseEvent) => {
@@ -65,7 +69,7 @@ export default function CustomerPicker({ selected, onSelect }: Props) {
   if (selected) {
     return (
       <div>
-        <span className="label">Customer</span>
+        <span className="label">{label}</span>
         <div className="mt-1 flex items-center gap-2 rounded-2xl border border-olive-500/40 bg-olive-100 px-3 py-2">
           <Check size={15} className="shrink-0 text-olive-700" />
           <span className="min-w-0 flex-1">
@@ -96,7 +100,7 @@ export default function CustomerPicker({ selected, onSelect }: Props) {
 
   return (
     <div ref={wrapper} className="relative">
-      <span className="label">Customer</span>
+      <span className="label">{label}</span>
       <label className="mt-1 flex items-center gap-2 rounded-2xl border border-black/10 px-3 py-2 focus-within:border-brand-400">
         <Search size={15} className="shrink-0 text-ink-700/40" />
         <input
@@ -107,12 +111,12 @@ export default function CustomerPicker({ selected, onSelect }: Props) {
             setAdding(false);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="Walk-in"
+          placeholder={placeholder}
           className="w-full bg-transparent text-sm outline-none"
         />
       </label>
 
-      {open && term.trim() && (
+      {open && (term.trim() || (browse && matches.length > 0)) && (
         <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-pop">
           {matches.map((customer) => (
             <button
@@ -133,7 +137,7 @@ export default function CustomerPicker({ selected, onSelect }: Props) {
             </button>
           ))}
 
-          {!exactMatch && !adding && (
+          {term.trim() && !exactMatch && !adding && (
             <button
               type="button"
               onClick={() => setAdding(true)}

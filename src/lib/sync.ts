@@ -329,7 +329,6 @@ const toRemoteInvoice = (i: Invoice) => ({
   bank_name: i.bankName || null,
   account_number: i.accountNumber || null,
   account_name: i.accountName || null,
-  // needs_approval, approved_account and approved_at are set by the database.
   sent_at: i.sentAt,
   paid_at: i.paidAt,
   paid_amount: i.paidAmount,
@@ -344,7 +343,8 @@ const toRemoteInvoice = (i: Invoice) => ({
 const fromRemoteInvoice = (row: Record<string, any>): Invoice => ({
   id: row.id,
   invoiceNo: row.invoice_no,
-  status: row.status,
+  // Invoices raised while payment accounts needed approval count as ready.
+  status: ["paid", "sent", "cancelled"].includes(row.status) ? row.status : "ready",
   customerId: row.customer_id ?? null,
   customerName: row.customer_name ?? "",
   customerPhone: row.customer_phone ?? "",
@@ -361,10 +361,6 @@ const fromRemoteInvoice = (row: Record<string, any>): Invoice => ({
   bankName: row.bank_name ?? "",
   accountNumber: row.account_number ?? "",
   accountName: row.account_name ?? "",
-  needsApproval: Boolean(row.needs_approval),
-  approvedAccount: row.approved_account ?? null,
-  approvedAt: row.approved_at ?? null,
-  approvalRequestedAt: row.approval_requested_at ?? null,
   sentAt: row.sent_at ?? null,
   paidAt: row.paid_at ?? null,
   paidAmount: Number(row.paid_amount ?? 0),
@@ -475,7 +471,6 @@ async function runSync(): Promise<SyncReport> {
     for (const batch of chunk(invoices)) {
       const { error } = await supabase.from("pos_invoices").upsert(batch.map(toRemoteInvoice));
       if (error) throw error;
-      // The database may have held an invoice for approval; the pull below brings that back.
       await dbi.invoices.bulkPut(batch.map((i) => ({ ...i, syncState: "synced" as const })));
       pushed += batch.length;
     }
@@ -585,7 +580,6 @@ async function runSync(): Promise<SyncReport> {
     for (const row of remoteInvoices ?? []) {
       const incoming = fromRemoteInvoice(row);
       const local = await dbi.invoices.get(incoming.id);
-      // Approval decisions are made in the cloud, so a newer cloud copy always wins over a synced one.
       if (
         !local ||
         (local.syncState === "synced" && Date.parse(incoming.updatedAt) >= Date.parse(local.updatedAt))

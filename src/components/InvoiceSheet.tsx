@@ -3,7 +3,8 @@
 import { XPEL_LOGO_DATA_URI } from "@/lib/brand-assets";
 import { useStoreProfile } from "@/lib/store-profile";
 import type { Invoice } from "@/lib/types";
-import { describeQuantity } from "@/lib/units";
+import { piecesOf } from "@/lib/units";
+import { productDetails } from "@/lib/invoice-pdf";
 import { cx, formatDate, formatDateTime, formatMoney } from "@/lib/utils";
 
 interface Props {
@@ -26,8 +27,8 @@ export default function InvoiceSheet({ invoice, className }: Props) {
       <div className="relative">
         <header className="flex items-start justify-between gap-4 rounded-2xl bg-brand-500 p-4 text-white">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-white">
-              <img src={XPEL_LOGO_DATA_URI} alt="Xpel Beauty" className="h-11 w-11 object-contain" />
+            <span className="grid h-24 w-24 shrink-0 place-items-center rounded-2xl bg-white">
+              <img src={XPEL_LOGO_DATA_URI} alt="Xpel Beauty" className="h-20 w-20 object-contain" />
             </span>
             <div className="min-w-0">
               <p className="text-base font-extrabold uppercase tracking-wide">{store.name}</p>
@@ -79,7 +80,8 @@ export default function InvoiceSheet({ invoice, className }: Props) {
           <thead>
             <tr className="bg-ink-900 text-left text-[11px] text-white">
               <th className="w-8 px-2 py-2 text-center">#</th>
-              <th className="px-2 py-2">Item</th>
+              <th className="px-2 py-2">Product</th>
+              <th className="px-2 py-2 text-center">Unit</th>
               <th className="px-2 py-2 text-right">Qty</th>
               <th className="px-2 py-2 text-right">Unit price</th>
               <th className="px-2 py-2 text-right">Amount</th>
@@ -90,23 +92,51 @@ export default function InvoiceSheet({ invoice, className }: Props) {
               <tr key={`${item.productId}-${index}`} className="border-b border-black/[0.06] odd:bg-black/[0.015]">
                 <td className="px-2 py-2 text-center text-ink-700/60">{index + 1}</td>
                 <td className="px-2 py-2">
-                  <p className="font-medium">{item.name}</p>
-                  {item.sku && <p className="text-[10px] text-ink-700/50">{item.sku}</p>}
+                  <p className="font-semibold text-ink-900">{item.name}</p>
+                  {productDetails(item) && <p className="text-[10px] text-ink-700/55">{productDetails(item)}</p>}
+                  {item.barcode && <p className="text-[10px] text-ink-700/55">Barcode {item.barcode}</p>}
                 </td>
-                <td className="px-2 py-2 text-right tabular">{describeQuantity(item)}</td>
+                <td className="px-2 py-2 text-center">
+                  {item.unit === "carton" ? (
+                    <>
+                      Carton
+                      <span className="block text-[10px] text-ink-700/55">({item.packSize} pcs)</span>
+                    </>
+                  ) : (
+                    "Pcs"
+                  )}
+                </td>
+                <td className="px-2 py-2 text-right tabular">
+                  {item.quantity}
+                  {item.unit === "carton" && (
+                    <span className="block text-[10px] text-ink-700/55">= {piecesOf(item)} pcs</span>
+                  )}
+                </td>
                 <td className="px-2 py-2 text-right tabular">{formatMoney(item.unitPrice)}</td>
                 <td className="px-2 py-2 text-right font-semibold tabular">{formatMoney(item.lineTotal)}</td>
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="bg-brand-50 font-semibold">
+              <td />
+              <td className="px-2 py-2" colSpan={4}>
+                {invoice.items.length} product{invoice.items.length === 1 ? "" : "s"} ·{" "}
+                {invoice.items.reduce((sum, item) => sum + piecesOf(item), 0)} pcs in total
+              </td>
+              <td className="px-2 py-2 text-right tabular">{formatMoney(invoice.subtotal)}</td>
+            </tr>
+          </tfoot>
         </table>
 
         <div className="mt-3 flex justify-end">
           <dl className="w-64 space-y-1 tabular">
-            <div className="flex justify-between">
-              <dt className="text-ink-700/60">Subtotal</dt>
-              <dd>{formatMoney(invoice.subtotal)}</dd>
-            </div>
+            {(invoice.discount > 0 || invoice.tax > 0) && (
+              <div className="flex justify-between">
+                <dt className="text-ink-700/60">Subtotal</dt>
+                <dd>{formatMoney(invoice.subtotal)}</dd>
+              </div>
+            )}
             {invoice.discount > 0 && (
               <div className="flex justify-between">
                 <dt className="text-ink-700/60">Discount</dt>
