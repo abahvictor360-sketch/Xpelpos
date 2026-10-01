@@ -187,6 +187,7 @@ export type ActivityKind =
   | "customer"
   | "shift"
   | "promotion"
+  | "invoice"
   | "system";
 
 /** One line in the running record of what happened on this till. */
@@ -223,4 +224,65 @@ export interface CartLine {
   unit?: SaleUnit;
   /** Pieces per unit: 1 for pieces, the carton size for cartons. */
   packSize?: number;
+}
+
+export type InvoiceStatus = "awaiting_approval" | "rejected" | "ready" | "sent" | "paid" | "cancelled";
+
+export interface InvoiceLine {
+  productId: string | null;
+  name: string;
+  sku: string;
+  /** Price of one `unit` — a piece, or a whole carton. */
+  unitPrice: number;
+  quantity: number;
+  unit: SaleUnit;
+  packSize: number;
+  lineTotal: number;
+}
+
+/** A bank account a customer can be asked to pay into. */
+export interface PaymentAccount {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+}
+
+/**
+ * A bill sent to a customer to pay by transfer. When the payment account is not
+ * in Xpel's name the admin must approve it by email first; until then the
+ * invoice is held at "awaiting_approval" and cannot be sent.
+ */
+export interface Invoice extends PaymentAccount {
+  id: string;
+  invoiceNo: string;
+  status: InvoiceStatus;
+  customerId: string | null;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  customerAddress: string;
+  items: InvoiceLine[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  notes: string;
+  issuedAt: string;
+  /** yyyy-mm-dd, or "" for none. */
+  dueDate: string;
+  needsApproval: boolean;
+  /** The account (see accountKey) the admin approved, or null. */
+  approvedAccount: string | null;
+  approvedAt: string | null;
+  approvalRequestedAt: string | null;
+  sentAt: string | null;
+  paidAt: string | null;
+  paidAmount: number;
+  paymentReference: string;
+  createdBy: string;
+  deviceId: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  syncState: SyncState;
 }

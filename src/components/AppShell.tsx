@@ -9,6 +9,7 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  FileText,
   History,
   LayoutDashboard,
   Menu,
@@ -48,6 +49,7 @@ const NAV = [
       { href: "/barcodes", label: "Barcodes", icon: ScanBarcode, caption: "Scan, assign and print product barcodes" },
       { href: "/promotions", label: "Promotions", icon: Tag, caption: "Coupons and promo codes" },
       { href: "/customers", label: "Customers", icon: Users, caption: "Who shops with you" },
+      { href: "/invoices", label: "Invoices", icon: FileText, caption: "Bill customers to pay by transfer" },
     ],
   },
   {
@@ -170,7 +172,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const current = FLAT.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)));
 
-  if (pathname.startsWith("/download")) return <>{children}</>;
+  // The download page and the admin's approval link stand alone, without the till around them.
+  if (pathname.startsWith("/download") || pathname.startsWith("/approve")) return <>{children}</>;
 
   return (
     <div className="min-h-screen p-0 lg:flex lg:gap-5 lg:p-5">

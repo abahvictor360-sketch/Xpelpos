@@ -3,7 +3,17 @@
 import { getDb, getSetting, setSetting } from "./db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
-import type { Coupon, Customer, Product, Sale, SaleItem, Shift, StockMovement } from "./types";
+import type {
+  Coupon,
+  Customer,
+  Invoice,
+  InvoiceLine,
+  Product,
+  Sale,
+  SaleItem,
+  Shift,
+  StockMovement,
+} from "./types";
 import { customerCodeFor } from "./utils";
 
 const LAST_PULL_KEY = "last_pull_at";
@@ -299,6 +309,74 @@ const fromRemoteShift = (row: Record<string, any>): Shift => ({
   syncState: "synced",
 });
 
+const toRemoteInvoice = (i: Invoice) => ({
+  id: i.id,
+  invoice_no: i.invoiceNo,
+  status: i.status,
+  customer_id: i.customerId,
+  customer_name: i.customerName || null,
+  customer_phone: i.customerPhone || null,
+  customer_email: i.customerEmail || null,
+  customer_address: i.customerAddress || null,
+  items: i.items,
+  subtotal: i.subtotal,
+  discount: i.discount,
+  tax: i.tax,
+  total: i.total,
+  notes: i.notes || null,
+  issued_at: i.issuedAt,
+  due_date: i.dueDate || null,
+  bank_name: i.bankName || null,
+  account_number: i.accountNumber || null,
+  account_name: i.accountName || null,
+  // needs_approval, approved_account and approved_at are set by the database.
+  sent_at: i.sentAt,
+  paid_at: i.paidAt,
+  paid_amount: i.paidAmount,
+  payment_reference: i.paymentReference || null,
+  created_by: i.createdBy || null,
+  device_id: i.deviceId || null,
+  created_at: i.createdAt,
+  updated_at: i.updatedAt,
+  deleted_at: i.deletedAt,
+});
+
+const fromRemoteInvoice = (row: Record<string, any>): Invoice => ({
+  id: row.id,
+  invoiceNo: row.invoice_no,
+  status: row.status,
+  customerId: row.customer_id ?? null,
+  customerName: row.customer_name ?? "",
+  customerPhone: row.customer_phone ?? "",
+  customerEmail: row.customer_email ?? "",
+  customerAddress: row.customer_address ?? "",
+  items: Array.isArray(row.items) ? (row.items as InvoiceLine[]) : [],
+  subtotal: Number(row.subtotal ?? 0),
+  discount: Number(row.discount ?? 0),
+  tax: Number(row.tax ?? 0),
+  total: Number(row.total ?? 0),
+  notes: row.notes ?? "",
+  issuedAt: row.issued_at,
+  dueDate: row.due_date ?? "",
+  bankName: row.bank_name ?? "",
+  accountNumber: row.account_number ?? "",
+  accountName: row.account_name ?? "",
+  needsApproval: Boolean(row.needs_approval),
+  approvedAccount: row.approved_account ?? null,
+  approvedAt: row.approved_at ?? null,
+  approvalRequestedAt: row.approval_requested_at ?? null,
+  sentAt: row.sent_at ?? null,
+  paidAt: row.paid_at ?? null,
+  paidAmount: Number(row.paid_amount ?? 0),
+  paymentReference: row.payment_reference ?? "",
+  createdBy: row.created_by ?? "",
+  deviceId: row.device_id ?? "",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  deletedAt: row.deleted_at ?? null,
+  syncState: "synced",
+});
+
 let inFlight: Promise<SyncReport> | null = null;
 
 /**
@@ -390,6 +468,15 @@ async function runSync(): Promise<SyncReport> {
       const { error } = await supabase.from("pos_stock_movements").upsert(batch.map(toRemoteMovement));
       if (error) throw error;
       await dbi.stockMovements.bulkPut(batch.map((m) => ({ ...m, syncState: "synced" as const })));
+      pushed += batch.length;
+    }
+
+    const invoices = await dbi.invoices.where("syncState").equals("pending").toArray();
+    for (const batch of chunk(invoices)) {
+      const { error } = await supabase.from("pos_invoices").upsert(batch.map(toRemoteInvoice));
+      if (error) throw error;
+      // The database may have held an invoice for approval; the pull below brings that back.
+      await dbi.invoices.bulkPut(batch.map((i) => ({ ...i, syncState: "synced" as const })));
       pushed += batch.length;
     }
 
@@ -486,6 +573,25 @@ async function runSync(): Promise<SyncReport> {
       if (itemError) throw itemError;
       if (remoteItems?.length) {
         await dbi.saleItems.bulkPut(remoteItems.map(fromRemoteItem));
+      }
+    }
+
+    const { data: remoteInvoices, error: invoiceError } = await supabase
+      .from("pos_invoices")
+      .select("*")
+      .gt("updated_at", since);
+    if (invoiceError) throw invoiceError;
+
+    for (const row of remoteInvoices ?? []) {
+      const incoming = fromRemoteInvoice(row);
+      const local = await dbi.invoices.get(incoming.id);
+      // Approval decisions are made in the cloud, so a newer cloud copy always wins over a synced one.
+      if (
+        !local ||
+        (local.syncState === "synced" && Date.parse(incoming.updatedAt) >= Date.parse(local.updatedAt))
+      ) {
+        await dbi.invoices.put(incoming);
+        pulled += 1;
       }
     }
 

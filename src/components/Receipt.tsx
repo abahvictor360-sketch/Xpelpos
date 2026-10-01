@@ -64,6 +64,7 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
           <p className="text-base font-extrabold uppercase tracking-wide text-ink-900">{store.name}</p>
           {store.address && <p className="text-[11px] text-ink-700/60">{store.address}</p>}
           {store.phone && <p className="text-[11px] text-ink-700/60">Tel: {store.phone}</p>}
+          {store.website && <p className="text-[11px] text-ink-700/60">{store.website}</p>}
           <p className="mt-1 text-xs text-ink-700/60">Sales receipt</p>
           <p className="text-[11px] text-ink-700/60">
             {sale.receiptNo} · {formatDateTime(sale.soldAt)}

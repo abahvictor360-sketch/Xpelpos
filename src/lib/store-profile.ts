@@ -7,6 +7,7 @@ export interface StoreProfile {
   name: string;
   address: string;
   phone: string;
+  website: string;
   vatRate: number;
   receiptFooter: string;
   /** Stock at or below this many units raises a low-stock alert. */
@@ -17,17 +18,19 @@ export const DEFAULT_PROFILE: StoreProfile = {
   name: "Xpel Beauty NG",
   address:
     "Zeal Plaza, Adjacent First Bank BBA, Beside Anambra Clusters, Trade Fair International Market, Lagos",
-  phone: "",
+  phone: "08107574456",
+  website: "www.xpelbeauty.com",
   vatRate: 0,
   receiptFooter: "Thank you for shopping with Xpel Beauty NG",
   lowStockAlert: 10,
 };
 
 export async function loadStoreProfile(): Promise<StoreProfile> {
-  const [name, address, phone, vatRate, receiptFooter, lowStockAlert] = await Promise.all([
+  const [name, address, phone, website, vatRate, receiptFooter, lowStockAlert] = await Promise.all([
     getSetting("store_name", DEFAULT_PROFILE.name),
     getSetting("store_address", DEFAULT_PROFILE.address),
     getSetting("store_phone", DEFAULT_PROFILE.phone),
+    getSetting("store_website", DEFAULT_PROFILE.website),
     getSetting("vat_rate", "0"),
     getSetting("receipt_footer", DEFAULT_PROFILE.receiptFooter),
     getSetting("low_stock_alert", String(DEFAULT_PROFILE.lowStockAlert)),
@@ -35,7 +38,8 @@ export async function loadStoreProfile(): Promise<StoreProfile> {
   return {
     name: name || DEFAULT_PROFILE.name,
     address,
-    phone,
+    phone: phone || DEFAULT_PROFILE.phone,
+    website: website || DEFAULT_PROFILE.website,
     vatRate: Math.min(Math.max(Number(vatRate) || 0, 0), 100),
     receiptFooter: receiptFooter || DEFAULT_PROFILE.receiptFooter,
     lowStockAlert: Math.max(Number(lowStockAlert) || DEFAULT_PROFILE.lowStockAlert, 0),
@@ -47,6 +51,7 @@ export async function saveStoreProfile(profile: StoreProfile): Promise<void> {
     setSetting("store_name", profile.name.trim() || DEFAULT_PROFILE.name),
     setSetting("store_address", profile.address.trim()),
     setSetting("store_phone", profile.phone.trim()),
+    setSetting("store_website", profile.website.trim()),
     setSetting("vat_rate", String(Math.min(Math.max(profile.vatRate || 0, 0), 100))),
     setSetting("receipt_footer", profile.receiptFooter.trim()),
     setSetting("low_stock_alert", String(Math.max(profile.lowStockAlert || 0, 0))),

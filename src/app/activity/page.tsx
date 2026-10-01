@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Boxes,
   ClipboardList,
+  FileText,
   History,
   Receipt,
   RotateCcw,
@@ -36,6 +37,7 @@ const FILTERS: Array<{ id: ActivityKind | "all"; label: string }> = [
   { id: "product", label: "Products" },
   { id: "customer", label: "Customers" },
   { id: "shift", label: "Shifts" },
+  { id: "invoice", label: "Invoices" },
 ];
 
 const ICONS: Record<ActivityKind, React.ElementType> = {
@@ -49,6 +51,7 @@ const ICONS: Record<ActivityKind, React.ElementType> = {
   customer: UserPlus,
   shift: ClipboardList,
   promotion: Tag,
+  invoice: FileText,
   system: SettingsIcon,
 };
 
