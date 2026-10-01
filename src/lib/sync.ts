@@ -1,6 +1,7 @@
 "use client";
 
 import { getDb, getSetting, setSetting } from "./db";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import type { Coupon, Customer, Product, Sale, SaleItem, Shift, StockMovement } from "./types";
 import { customerCodeFor } from "./utils";
@@ -14,6 +15,48 @@ export interface SyncReport {
   pulled: number;
   message: string;
   at: string;
+}
+
+/**
+ * Carton columns, added by migration 20261001000001. A cloud project that has
+ * not had that migration yet rejects them, so pushes fall back to sending rows
+ * without them rather than stopping sync altogether.
+ */
+const CARTON_COLUMNS = ["units_per_carton", "carton_price", "unit", "pack_size"];
+let cartonColumnsMissing = false;
+
+function isMissingCartonColumn(error: { code?: string; message?: string }): boolean {
+  const message = error.message ?? "";
+  return (
+    (error.code === "PGRST204" || error.code === "42703") &&
+    CARTON_COLUMNS.some((column) => message.includes(column))
+  );
+}
+
+function withoutCartonColumns<T extends Record<string, unknown>>(row: T): T {
+  const copy: Record<string, unknown> = { ...row };
+  for (const column of CARTON_COLUMNS) delete copy[column];
+  return copy as T;
+}
+
+async function upsertRows(supabase: SupabaseClient, table: string, rows: Record<string, unknown>[]) {
+  const { error } = await supabase
+    .from(table)
+    .upsert(cartonColumnsMissing ? rows.map(withoutCartonColumns) : rows);
+  if (!error) return;
+  if (!cartonColumnsMissing && isMissingCartonColumn(error)) {
+    cartonColumnsMissing = true;
+    console.warn("[xpel] cloud database has no carton columns yet; syncing without them");
+    const retry = await supabase.from(table).upsert(rows.map(withoutCartonColumns));
+    if (retry.error) throw retry.error;
+    return;
+  }
+  throw error;
+}
+
+/** Older cloud rows (or an unmigrated project) carry no carton fields: keep what this till knows. */
+function cartonNumber(value: unknown): number | undefined {
+  return value === null || value === undefined ? undefined : Number(value);
 }
 
 function chunk<T>(items: T[], size = CHUNK): T[][] {
@@ -33,6 +76,8 @@ const toRemoteProduct = (p: Product) => ({
   stock_qty: p.stockQty,
   low_stock_threshold: p.lowStockThreshold,
   barcode: p.barcode || null,
+  units_per_carton: Math.max(0, Math.trunc(p.unitsPerCarton ?? 0)),
+  carton_price: p.cartonPrice ?? 0,
   is_active: p.isActive,
   created_at: p.createdAt,
   updated_at: p.updatedAt,
@@ -50,6 +95,8 @@ const fromRemoteProduct = (row: Record<string, any>): Product => ({
   stockQty: Number(row.stock_qty ?? 0),
   lowStockThreshold: Number(row.low_stock_threshold ?? 5),
   barcode: row.barcode ?? "",
+  unitsPerCarton: cartonNumber(row.units_per_carton),
+  cartonPrice: cartonNumber(row.carton_price),
   isActive: Boolean(row.is_active),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -118,6 +165,8 @@ const toRemoteItem = (i: SaleItem) => ({
   cost_price: i.costPrice,
   quantity: i.quantity,
   line_total: i.lineTotal,
+  unit: i.unit ?? "pcs",
+  pack_size: Math.max(1, Math.trunc(i.packSize ?? 1)),
   created_at: i.createdAt,
 });
 
@@ -131,6 +180,8 @@ const fromRemoteItem = (row: Record<string, any>): SaleItem => ({
   costPrice: Number(row.cost_price ?? 0),
   quantity: Number(row.quantity ?? 0),
   lineTotal: Number(row.line_total ?? 0),
+  unit: row.unit === "carton" ? "carton" : "pcs",
+  packSize: Math.max(1, Number(row.pack_size ?? 1)),
   createdAt: row.created_at,
   syncState: "synced",
 });
@@ -290,8 +341,7 @@ async function runSync(): Promise<SyncReport> {
     // ---- Push local changes (sales before their items, for the FK) ----
     const products = await dbi.products.where("syncState").equals("pending").toArray();
     for (const batch of chunk(products)) {
-      const { error } = await supabase.from("pos_products").upsert(batch.map(toRemoteProduct));
-      if (error) throw error;
+      await upsertRows(supabase, "pos_products", batch.map(toRemoteProduct));
       await dbi.products.bulkPut(batch.map((p) => ({ ...p, syncState: "synced" as const })));
       pushed += batch.length;
     }
@@ -330,8 +380,7 @@ async function runSync(): Promise<SyncReport> {
 
     const items = await dbi.saleItems.where("syncState").equals("pending").toArray();
     for (const batch of chunk(items)) {
-      const { error } = await supabase.from("pos_sale_items").upsert(batch.map(toRemoteItem));
-      if (error) throw error;
+      await upsertRows(supabase, "pos_sale_items", batch.map(toRemoteItem));
       await dbi.saleItems.bulkPut(batch.map((i) => ({ ...i, syncState: "synced" as const })));
       pushed += batch.length;
     }
@@ -358,7 +407,11 @@ async function runSync(): Promise<SyncReport> {
       const local = await dbi.products.get(incoming.id);
       // Last write wins; never clobber edits this device has not pushed yet.
       if (!local || (local.syncState === "synced" && incoming.updatedAt > local.updatedAt)) {
-        await dbi.products.put(incoming);
+        await dbi.products.put({
+          ...incoming,
+          unitsPerCarton: incoming.unitsPerCarton ?? local?.unitsPerCarton,
+          cartonPrice: incoming.cartonPrice ?? local?.cartonPrice,
+        });
         pulled += 1;
       }
     }

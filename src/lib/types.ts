@@ -1,6 +1,8 @@
 export type PaymentMethod = "cash" | "transfer" | "card";
 export type SaleStatus = "completed" | "refunded" | "void";
 export type SyncState = "pending" | "synced";
+/** How a line is sold: single pieces, or whole cartons of `packSize` pieces. */
+export type SaleUnit = "pcs" | "carton";
 
 export interface Product {
   id: string;
@@ -13,6 +15,10 @@ export interface Product {
   stockQty: number;
   lowStockThreshold: number;
   barcode: string;
+  /** Pieces in one carton; 0 or unset means the product is not handled in cartons yet. */
+  unitsPerCarton?: number;
+  /** Price of a whole carton; 0 or unset means pieces × unit price. */
+  cartonPrice?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -26,10 +32,17 @@ export interface SaleItem {
   productId: string | null;
   name: string;
   sku: string;
+  /** Price of one `unit` — a piece, or a whole carton. */
   unitPrice: number;
+  /** Cost of a single piece, whatever the line was sold in. */
   costPrice: number;
+  /** How many `unit`s were sold; stock moves by quantity × packSize pieces. */
   quantity: number;
   lineTotal: number;
+  /** Unset on sales made before cartons existed, which were all pieces. */
+  unit?: SaleUnit;
+  /** Pieces per unit sold: 1 for pieces, the carton size for cartons. */
+  packSize?: number;
   createdAt: string;
   syncState: SyncState;
 }
@@ -199,8 +212,15 @@ export interface CartLine {
   productId: string;
   name: string;
   sku: string;
+  /** Price of one `unit` — a piece, or a whole carton. */
   unitPrice: number;
+  /** Cost of a single piece. */
   costPrice: number;
   quantity: number;
+  /** Stock on hand, in pieces. */
   stockQty: number;
+  /** Unset on baskets saved before cartons existed: pieces. */
+  unit?: SaleUnit;
+  /** Pieces per unit: 1 for pieces, the carton size for cartons. */
+  packSize?: number;
 }

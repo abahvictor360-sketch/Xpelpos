@@ -19,6 +19,14 @@ import { toast } from "@/components/Toaster";
 import { exportCsvInventory } from "@/lib/exporters";
 import type { Product } from "@/lib/types";
 import { cx, formatMoney, formatNumber } from "@/lib/utils";
+import { cartonPrice, cartonSize } from "@/lib/units";
+import CartonQuantityField, {
+  emptyCartonEntry,
+  entryNote,
+  entryPieces,
+  entryProblem,
+  rememberCartonSize,
+} from "@/components/CartonQuantityField";
 
 const EMPTY = {
   name: "",
@@ -30,6 +38,8 @@ const EMPTY = {
   stockQty: "",
   lowStockThreshold: "5",
   barcode: "",
+  unitsPerCarton: "",
+  cartonPrice: "",
 };
 
 export default function InventoryPage() {
@@ -161,7 +171,14 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-4 py-3 text-ink-700/70">{product.category || "—"}</td>
                       <td className="tabular whitespace-nowrap px-4 py-3 text-right font-medium">{formatMoney(product.price)}</td>
-                      <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">{product.stockQty}</td>
+                      <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold">
+                        {product.stockQty}
+                        {cartonSize(product) > 0 && (
+                          <span className="block text-[11px] font-normal text-ink-700/50">
+                            {Math.floor(product.stockQty / cartonSize(product))} ctn of {cartonSize(product)}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={cx(
@@ -290,6 +307,8 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
           stockQty: String(product.stockQty),
           lowStockThreshold: String(product.lowStockThreshold),
           barcode: product.barcode,
+          unitsPerCarton: cartonSize(product) ? String(cartonSize(product)) : "",
+          cartonPrice: product.cartonPrice ? String(product.cartonPrice) : "",
         }
       : EMPTY,
   );
@@ -320,6 +339,8 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
       stockQty: Number(form.stockQty) || 0,
       lowStockThreshold: Number(form.lowStockThreshold) || 5,
       barcode: form.barcode,
+      unitsPerCarton: Number(form.unitsPerCarton) || 0,
+      cartonPrice: Number(form.cartonPrice) || 0,
     };
     try {
       if (product) await updateProduct(product.id, payload);
@@ -364,6 +385,33 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
         </div>
         <Field label="Barcode (optional)" value={form.barcode} onChange={set("barcode")} placeholder="Scan or type" />
 
+        <div className="rounded-2xl bg-black/[0.025] p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-700/60">Sold in cartons too?</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Pcs per carton"
+              value={form.unitsPerCarton}
+              onChange={set("unitsPerCarton")}
+              inputMode="numeric"
+              placeholder="e.g. 12"
+            />
+            <Field
+              label="Carton price"
+              value={form.cartonPrice}
+              onChange={set("cartonPrice")}
+              inputMode="decimal"
+              placeholder={
+                Number(form.unitsPerCarton) > 0 && Number(form.price) > 0
+                  ? String(Number(form.unitsPerCarton) * Number(form.price))
+                  : "Auto"
+              }
+            />
+          </div>
+          <p className="mt-2 text-xs text-ink-700/55">
+            Leave carton price empty to charge pcs × selling price. Stock is always counted in pcs.
+          </p>
+        </div>
+
         {error && <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-700">{error}</p>}
 
         <div className="flex gap-2 pt-1">
@@ -380,14 +428,22 @@ function ProductForm({ product, onClose }: { product: Product | null; onClose: (
 }
 
 function RestockDialog({ product, onClose }: { product: Product; onClose: () => void }) {
-  const [quantity, setQuantity] = useState("");
+  const [entry, setEntry] = useState(() => emptyCartonEntry(product));
   const [note, setNote] = useState("");
+  const [error, setError] = useState("");
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const value = Number(quantity);
-    if (!value) return;
-    await restockProduct(product.id, value, note || "Restock");
+    const problem = entryProblem(entry);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    // Stock is kept in pieces: 5 cartons of 12 go on the shelf as 60.
+    await rememberCartonSize(product, entry);
+    const detail = [entryNote(entry), note].filter(Boolean).join(" · ");
+    await restockProduct(product.id, entryPieces(entry), detail || "Restock");
+    toast(`${entryPieces(entry)} pcs of ${product.name} added to stock.`, "success");
     onClose();
   };
 
@@ -395,24 +451,29 @@ function RestockDialog({ product, onClose }: { product: Product; onClose: () => 
     <Dialog title={`Restock ${product.name}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <p className="text-sm text-ink-700/65">
-          Currently <span className="tabular font-semibold text-ink-900">{product.stockQty}</span> in stock. Enter how
-          many units you received.
+          Currently <span className="tabular font-semibold text-ink-900">{product.stockQty} pcs</span> in stock
+          {cartonSize(product) > 0 && (
+            <> ({cartonSize(product)} pcs per carton, carton sells at {formatMoney(cartonPrice(product))})</>
+          )}
+          . Enter what you received, in pieces or cartons.
         </p>
-        <Field
+        <CartonQuantityField
+          entry={entry}
+          onChange={(next) => {
+            setEntry(next);
+            setError("");
+          }}
           label="Quantity received"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-          inputMode="numeric"
-          placeholder="0"
           autoFocus
         />
         <Field label="Note (optional)" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Supplier / invoice" />
+        {error && <p className="rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-700">{error}</p>}
         <div className="flex gap-2 pt-1">
           <button type="button" onClick={onClose} className="btn-ghost flex-1">
             Cancel
           </button>
           <button type="submit" className="btn-primary flex-1">
-            Add to stock
+            Add {entryPieces(entry) > 0 ? `${entryPieces(entry)} pcs` : ""} to stock
           </button>
         </div>
       </form>

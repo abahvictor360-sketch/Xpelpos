@@ -6,6 +6,7 @@ import { Printer, X } from "lucide-react";
 import type { Sale, SaleItem } from "@/lib/types";
 import { useStoreProfile } from "@/lib/store-profile";
 import { formatDateTime, formatMoney } from "@/lib/utils";
+import { describeQuantity, unitName } from "@/lib/units";
 
 interface Props {
   sale: Sale;
@@ -61,7 +62,9 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
                   <td className="py-1">
                     {item.name}
                     <span className="block text-[11px] text-ink-700/55">
-                      {item.quantity} × {formatMoney(item.unitPrice)}
+                      {item.unit === "carton"
+                        ? `${describeQuantity(item)} × ${formatMoney(item.unitPrice)}/${unitName("carton", 1)}`
+                        : `${item.quantity} × ${formatMoney(item.unitPrice)}`}
                     </span>
                   </td>
                   <td className="tabular py-1 text-right font-medium">{formatMoney(item.lineTotal)}</td>
