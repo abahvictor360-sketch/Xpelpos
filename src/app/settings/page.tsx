@@ -13,6 +13,7 @@ import { toast } from "@/components/Toaster";
 import Modal from "@/components/Modal";
 import { DEFAULT_PROFILE, loadStoreProfile, saveStoreProfile, type StoreProfile } from "@/lib/store-profile";
 import PrinterSettings from "@/components/PrinterSettings";
+import InvoiceSettings from "@/components/InvoiceSettings";
 
 export default function SettingsPage() {
   const [cashier, setCashier] = useState("");
@@ -289,10 +290,14 @@ export default function SettingsPage() {
             <span className="label">Address</span>
             <input value={profile.address} onChange={setField("address")} className="input" placeholder="Shop address" />
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="label">Phone</span>
               <input value={profile.phone} onChange={setField("phone")} className="input" placeholder="0800 000 0000" />
+            </label>
+            <label className="block">
+              <span className="label">Website</span>
+              <input value={profile.website} onChange={setField("website")} className="input" placeholder="www.xpelbeauty.com" />
             </label>
             <label className="block">
               <span className="label">VAT rate (%)</span>
@@ -336,6 +341,8 @@ export default function SettingsPage() {
       </section>
 
       <PrinterSettings />
+
+      <InvoiceSettings />
 
       <section className="card p-4">
         <h2 className="flex items-center gap-2 text-sm font-bold text-ink-900">

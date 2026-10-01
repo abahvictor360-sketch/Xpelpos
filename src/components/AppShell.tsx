@@ -9,6 +9,7 @@ import {
   Boxes,
   ClipboardList,
   Download,
+  FileText,
   History,
   LayoutDashboard,
   Menu,
@@ -48,6 +49,7 @@ const NAV = [
       { href: "/barcodes", label: "Barcodes", icon: ScanBarcode, caption: "Scan, assign and print product barcodes" },
       { href: "/promotions", label: "Promotions", icon: Tag, caption: "Coupons and promo codes" },
       { href: "/customers", label: "Customers", icon: Users, caption: "Who shops with you" },
+      { href: "/invoices", label: "Invoices", icon: FileText, caption: "Bill customers to pay by transfer" },
     ],
   },
   {

@@ -119,7 +119,7 @@ export async function exportPdf(report: SalesReport): Promise<void> {
 
   doc.setFont(REPORT_FONT_NAME, "normal");
   doc.setFontSize(9);
-  const contact = [store.address, store.phone].filter(Boolean).join("  ·  ");
+  const contact = [store.address, store.phone, store.website].filter(Boolean).join("  ·  ");
   // Keep the contact block clear of the period text on the right.
   const contactLines = contact
     ? (doc.splitTextToSize(contact, pageWidth - margin * 2 - 70 - 210) as string[]).slice(0, 2)
@@ -378,7 +378,7 @@ export async function exportExcel(report: SalesReport): Promise<void> {
   summary.getRow(2).height = 34;
 
   summary.mergeCells("B3:E3");
-  summary.getCell("B3").value = [store.address, store.phone].filter(Boolean).join("  ·  ");
+  summary.getCell("B3").value = [store.address, store.phone, store.website].filter(Boolean).join("  ·  ");
   summary.getCell("B3").font = { size: 10, color: { argb: `FF${hex(REPORT_COLOURS.muted)}` } };
 
   summary.mergeCells("B4:E4");
@@ -698,7 +698,7 @@ export async function exportDocx(report: SalesReport): Promise<void> {
                   }),
                 ],
               }),
-              ...[[store.address, store.phone].filter(Boolean).join("  ·  ")]
+              ...[[store.address, store.phone, store.website].filter(Boolean).join("  ·  ")]
                 .filter(Boolean)
                 .map(
                   (line) =>

@@ -140,3 +140,27 @@ export async function printReceipt(): Promise<{ ok: boolean; reason?: string }> 
     pageStyle.remove();
   }
 }
+
+/**
+ * Prints the invoice sheet on screen (`.print-invoice-root`) on A4. Invoices
+ * always go through the print dialog, so a till whose receipts print straight
+ * to a thermal roll can still pick the office printer here.
+ */
+export async function printInvoice(): Promise<{ ok: boolean; reason?: string }> {
+  const body = document.body;
+  const pageStyle = document.createElement("style");
+  pageStyle.textContent = "@page { size: A4 portrait; margin: 0; }";
+  document.head.appendChild(pageStyle);
+  body.classList.add("printing-invoice");
+  try {
+    const desktop = desktopBridge();
+    if (desktop) {
+      return await desktop.print({ silent: false, pageWidthMicrons: 210_000, pageHeightMicrons: 297_000 });
+    }
+    window.print();
+    return { ok: true };
+  } finally {
+    body.classList.remove("printing-invoice");
+    pageStyle.remove();
+  }
+}

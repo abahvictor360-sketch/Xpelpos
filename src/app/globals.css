@@ -145,6 +145,29 @@ body {
   display: none;
 }
 
+/* Invoice: an A4 page, shown as a preview on screen and printed as is. */
+.invoice-sheet {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  color: #1f1e19;
+}
+.invoice-sheet-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.invoice-sheet-watermark img {
+  width: 55%;
+  opacity: 0.05;
+}
+.print-invoice-root {
+  display: none;
+}
+
 /* Off-screen copy used to measure the receipt before printing; mirrors the print layout. */
 .receipt-measure {
   position: fixed;
@@ -249,6 +272,25 @@ body {
 
   body.printing-labels .print-labels-root {
     display: block !important;
+  }
+
+  body.printing-invoice > *:not(.print-invoice-root) {
+    display: none !important;
+  }
+
+  body.printing-invoice .print-invoice-root {
+    display: block !important;
+  }
+
+  body.printing-invoice .invoice-sheet {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 14mm 14mm 18mm !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .barcode-label,

@@ -8,6 +8,7 @@ import type {
   Coupon,
   Customer,
   HeldSale,
+  Invoice,
   Product,
   Sale,
   SaleItem,
@@ -28,6 +29,7 @@ class XpelPosDatabase extends Dexie {
   heldSales!: Table<HeldSale, string>;
   transfers!: Table<Transfer, string>;
   activities!: Table<Activity, string>;
+  invoices!: Table<Invoice, string>;
 
   constructor() {
     super("xpel-pos");
@@ -89,6 +91,10 @@ class XpelPosDatabase extends Dexie {
             transfer.receivedBy = transfer.direction === "in" ? staff : party;
           }
         });
+    });
+
+    this.version(5).stores({
+      invoices: "id, invoiceNo, status, issuedAt, updatedAt, syncState, deletedAt",
     });
   }
 }
