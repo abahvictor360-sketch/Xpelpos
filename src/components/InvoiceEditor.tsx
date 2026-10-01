@@ -23,12 +23,14 @@ import { addDays, cx, formatMoney, round2, toDateInput } from "@/lib/utils";
 
 interface Props {
   invoice?: Invoice | null;
+  /** The admin PIN entered to open an existing invoice for editing. */
+  adminPin?: string;
   onClose: () => void;
   onSaved: (invoice: Invoice) => void;
 }
 
 /** Raise a new invoice, or change one that has not been paid or cancelled. */
-export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
+export default function InvoiceEditor({ invoice, adminPin = "", onClose, onSaved }: Props) {
   const store = useStoreProfile();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [customerName, setCustomerName] = useState(invoice?.customerName ?? "");
@@ -149,7 +151,7 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
         notes,
         dueDate,
         ...account,
-      });
+      }, adminPin);
       onSaved(saved);
     } catch (error) {
       toast(error instanceof Error ? error.message : "Could not save the invoice.", "error");
@@ -160,7 +162,7 @@ export default function InvoiceEditor({ invoice, onClose, onSaved }: Props) {
 
   return (
     <Modal
-      title={invoice ? `Edit invoice ${invoice.invoiceNo}` : "New invoice"}
+      title={invoice ? `Edit invoice ${invoice.invoiceNo} (admin)` : "New invoice"}
       onClose={onClose}
       size="lg"
       footer={

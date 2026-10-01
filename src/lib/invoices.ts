@@ -41,6 +41,7 @@ export function describeAccount(account: PaymentAccount): string {
 
 /** The accounts invoices can be paid into: Xpel's own first, then any the admin added. */
 export async function loadPaymentAccounts(): Promise<PaymentAccount[]> {
+  await removeRetiredAccounts();
   let saved: PaymentAccount[] = [];
   try {
     const parsed = JSON.parse((await getSetting(ACCOUNTS_KEY)) || "[]");
@@ -53,6 +54,29 @@ export async function loadPaymentAccounts(): Promise<PaymentAccount[]> {
     if (account?.accountNumber && !all.some((a) => sameAccount(a, account))) all.push(account);
   }
   return all;
+}
+
+/** GTBank accounts were taken off the list; clear any saved on this till, once. */
+async function removeRetiredAccounts(): Promise<void> {
+  const FLAG = "invoice_accounts_gtb_removed";
+  if (await getSetting(FLAG)) return;
+  try {
+    const parsed = JSON.parse((await getSetting(ACCOUNTS_KEY)) || "[]");
+    if (Array.isArray(parsed)) {
+      const retired = (account: PaymentAccount) => /\b(gtb|gtbank|guaranty)/i.test(account?.bankName ?? "");
+      const kept = parsed.filter((account: PaymentAccount) => !retired(account));
+      if (kept.length !== parsed.length) {
+        await setSetting(ACCOUNTS_KEY, JSON.stringify(kept));
+        const defaultKey = await getSetting(DEFAULT_ACCOUNT_KEY);
+        if (parsed.some((account: PaymentAccount) => retired(account) && accountKey(account) === defaultKey)) {
+          await setSetting(DEFAULT_ACCOUNT_KEY, "");
+        }
+      }
+    }
+  } catch {
+    // A list that will not parse is replaced the next time the admin saves one.
+  }
+  await setSetting(FLAG, "1");
 }
 
 async function saveAccountList(accounts: PaymentAccount[]): Promise<void> {
@@ -187,7 +211,11 @@ export interface InvoiceDraft extends PaymentAccount {
   dueDate: string;
 }
 
-export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
+/**
+ * Saves a new invoice, or — with the admin PIN — changes an existing one, paid
+ * or not. Only a cancelled invoice is final.
+ */
+export async function saveInvoice(draft: InvoiceDraft, adminPin = ""): Promise<Invoice> {
   if (!draft.customerName.trim()) throw new Error("Enter who the invoice is for.");
   if (draft.items.length === 0) throw new Error("Add at least one item.");
   const db = getDb();
@@ -203,8 +231,10 @@ export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
   if (!keptAccount && !(await loadPaymentAccounts()).some((a) => sameAccount(a, account))) {
     throw new Error("Choose one of the payment accounts the admin has set up.");
   }
-  if (existing && (existing.status === "paid" || existing.status === "cancelled")) {
-    throw new Error("A paid or cancelled invoice cannot be changed.");
+  if (existing) {
+    if (!(await hasAdminPin())) throw new Error("Set the admin PIN in Settings → Invoices first.");
+    await requireAdmin(adminPin);
+    if (existing.status === "cancelled") throw new Error("A cancelled invoice cannot be changed.");
   }
   const deviceId = existing?.deviceId || (await getDeviceId());
 
@@ -235,9 +265,10 @@ export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
     dueDate: draft.dueDate,
     ...account,
     sentAt: existing?.sentAt ?? null,
-    paidAt: null,
-    paidAmount: 0,
-    paymentReference: "",
+    // An admin correcting a paid invoice keeps its payment record.
+    paidAt: existing?.paidAt ?? null,
+    paidAmount: existing?.paidAmount ?? 0,
+    paymentReference: existing?.paymentReference ?? "",
     createdBy: existing?.createdBy || (await getSetting("cashier_name", "Counter")) || "Counter",
     deviceId,
     createdAt: existing?.createdAt ?? now,
@@ -249,7 +280,7 @@ export async function saveInvoice(draft: InvoiceDraft): Promise<Invoice> {
   await db.invoices.put(invoice);
   await logActivity({
     kind: "invoice",
-    message: `${existing ? "Updated" : "Raised"} invoice ${invoice.invoiceNo}`,
+    message: `${existing ? "Admin edited" : "Raised"} invoice ${invoice.invoiceNo}`,
     detail: invoice.customerName,
     amount: invoice.total,
     referenceId: invoice.id,

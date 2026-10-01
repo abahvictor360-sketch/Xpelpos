@@ -29,7 +29,7 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [term, setTerm] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Invoice | "new" | null>(null);
+  const [editing, setEditing] = useState<{ invoice: Invoice; pin: string } | "new" | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const open = invoices?.find((invoice) => invoice.id === openId) ?? null;
@@ -187,11 +187,12 @@ export default function InvoicesPage() {
       </div>
 
       {open && !editing && (
-        <InvoiceDetail invoice={open} onClose={() => setOpenId(null)} onEdit={() => setEditing(open)} />
+        <InvoiceDetail invoice={open} onClose={() => setOpenId(null)} onEdit={(pin) => setEditing({ invoice: open, pin })} />
       )}
       {editing && (
         <InvoiceEditor
-          invoice={editing === "new" ? null : editing}
+          invoice={editing === "new" ? null : editing.invoice}
+          adminPin={editing === "new" ? "" : editing.pin}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
         />

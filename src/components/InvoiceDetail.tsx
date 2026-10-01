@@ -11,6 +11,8 @@ import {
   STATUS_TONE,
   canShare,
   cancelInvoice,
+  checkAdminPin,
+  hasAdminPin,
   confirmInvoicePayment,
   emailInvoice,
   markInvoiceSent,
@@ -25,7 +27,8 @@ import { cx, formatDateTime, formatMoney } from "@/lib/utils";
 interface Props {
   invoice: Invoice;
   onClose: () => void;
-  onEdit: () => void;
+  /** Called with the admin PIN once it has been checked. */
+  onEdit: (adminPin: string) => void;
 }
 
 type Busy = "" | "whatsapp" | "email" | "download" | "print" | "pay" | "cancel";
@@ -40,7 +43,8 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
   const shareable = canShare(invoice);
   const paid = invoice.status === "paid";
   const docKind: InvoiceDocumentKind = paid ? "payment" : "invoice";
-  const editable = !paid && invoice.status !== "cancelled";
+  const editable = invoice.status !== "cancelled";
+  const [askingPin, setAskingPin] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -135,11 +139,11 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
               </button>
             )}
             {editable && (
-              <button onClick={onEdit} disabled={Boolean(busy)} className="btn-ghost">
-                <Pencil size={16} /> Edit
+              <button onClick={() => setAskingPin(true)} disabled={Boolean(busy)} className="btn-ghost">
+                <Pencil size={16} /> Edit (admin)
               </button>
             )}
-            {editable && (
+            {editable && !paid && (
               <button onClick={() => void cancel()} disabled={Boolean(busy)} className="btn-ghost text-red-700">
                 <Ban size={16} /> Cancel invoice
               </button>
@@ -174,6 +178,15 @@ export default function InvoiceDetail({ invoice, onClose, onEdit }: Props) {
         <EmailInvoice invoice={invoice} kind={emailing} defaultMessage={message(emailing)} onClose={() => setEmailing(null)} />
       )}
       {paying && <ConfirmPayment invoice={invoice} onClose={() => setPaying(false)} />}
+      {askingPin && (
+        <AdminPinPrompt
+          onClose={() => setAskingPin(false)}
+          onUnlocked={(pin) => {
+            setAskingPin(false);
+            onEdit(pin);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -340,6 +353,59 @@ function ConfirmPayment({ invoice, onClose }: { invoice: Invoice; onClose: () =>
           <input value={when} onChange={(e) => setWhen(e.target.value)} className="input" type="datetime-local" />
         </label>
       </div>
+    </Modal>
+  );
+}
+
+function AdminPinPrompt({ onClose, onUnlocked }: { onClose: () => void; onUnlocked: (pin: string) => void }) {
+  const [pin, setPin] = useState("");
+  const [pinSet, setPinSet] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    void hasAdminPin().then(setPinSet);
+  }, []);
+
+  const submit = async () => {
+    setChecking(true);
+    try {
+      if (await checkAdminPin(pin)) onUnlocked(pin.trim());
+      else toast("Wrong admin PIN.", "error");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Modal title="Admin PIN" size="sm" onClose={onClose}>
+      {pinSet === false ? (
+        <p className="text-sm text-ink-700/70">
+          Only the admin can edit invoices. Set the admin PIN first in Settings → Invoices.
+        </p>
+      ) : (
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <p className="text-sm text-ink-700/70">Only the admin can edit invoices. Enter the admin PIN to continue.</p>
+          <input
+            value={pin}
+            onChange={(event) => setPin(event.target.value)}
+            className="input"
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            placeholder="Admin PIN"
+            aria-label="Admin PIN to edit"
+          />
+          <button type="submit" disabled={checking || !pin.trim()} className="btn-primary w-full">
+            <Pencil size={16} /> Edit invoice
+          </button>
+        </form>
+      )}
     </Modal>
   );
 }
