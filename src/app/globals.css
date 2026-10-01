@@ -82,8 +82,9 @@ body {
     margin: 6mm;
   }
 
+  html,
   body {
-    background: #fff;
+    background: #fff !important;
   }
 
   body.printing-receipt > *:not(.print-receipt-root) {
@@ -109,11 +110,27 @@ body {
   }
 
   /* On screen a long receipt scrolls inside the dialog; on paper it runs full length. */
+  /* The sheet anchors the watermark, so it centres on the whole printed slip. */
+  .print-receipt-sheet {
+    position: relative !important;
+  }
+
+  .print-receipt-watermark {
+    display: flex !important;
+  }
+
   .print-receipt-sheet,
   .print-receipt-body {
     display: block !important;
     max-height: none !important;
     overflow: visible !important;
+  }
+
+  /* Keep the logo's colours on paper rather than letting the browser drop them. */
+  .print-receipt-logo,
+  .print-receipt-watermark img {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .print-hide {

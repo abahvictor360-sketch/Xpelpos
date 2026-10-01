@@ -7,6 +7,7 @@ import type { Sale, SaleItem } from "@/lib/types";
 import { useStoreProfile } from "@/lib/store-profile";
 import { formatDateTime, formatMoney } from "@/lib/utils";
 import { describeQuantity, unitName } from "@/lib/units";
+import { XPEL_LOGO_DATA_URI } from "@/lib/brand-assets";
 
 interface Props {
   sale: Sale;
@@ -35,7 +36,15 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
     <div className="print-receipt-root fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
       {/* Capped to the screen: a long basket scrolls inside, and the header and
           buttons stay in reach. Printing lifts the cap (see globals.css). */}
-      <div className="print-receipt-sheet flex max-h-full w-full max-w-sm flex-col rounded-2xl bg-white p-5 shadow-card">
+      <div className="print-receipt-sheet relative isolate flex max-h-full w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white p-5 shadow-card">
+        {/* Faded brand watermark behind the slip, on screen and on paper. */}
+        <div
+          aria-hidden="true"
+          className="print-receipt-watermark pointer-events-none absolute inset-0 -z-10 flex flex-col items-center justify-center gap-2 opacity-[0.07]"
+        >
+          <img src={XPEL_LOGO_DATA_URI} alt="" className="w-3/4 max-w-[240px] -rotate-12 object-contain" />
+          <span className="-rotate-12 text-3xl font-black uppercase tracking-[0.3em] text-ink-900">Xpel Beauty</span>
+        </div>
         <div className="print-hide flex shrink-0 items-start justify-between">
           <p className="text-sm font-semibold text-olive-700">{title}</p>
           <button onClick={onClose} aria-label="Close receipt" className="rounded-lg p-1 hover:bg-black/5">
@@ -44,6 +53,12 @@ export default function Receipt({ sale, items, onClose, title = "Sale completed"
         </div>
 
         <div id="xpel-receipt" className="print-receipt-body -mx-2 mt-3 min-h-0 flex-1 overflow-y-auto px-2 text-center">
+          {/* Embedded rather than fetched, so it shows offline and on the printed slip. */}
+          <img
+            src={XPEL_LOGO_DATA_URI}
+            alt="Xpel Beauty NG"
+            className="print-receipt-logo mx-auto mb-2 h-16 w-16 object-contain"
+          />
           <p className="text-base font-extrabold uppercase tracking-wide text-ink-900">{store.name}</p>
           {store.address && <p className="text-[11px] text-ink-700/60">{store.address}</p>}
           {store.phone && <p className="text-[11px] text-ink-700/60">Tel: {store.phone}</p>}
