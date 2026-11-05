@@ -12,6 +12,7 @@ interface Toast {
 }
 
 const EVENT = "xpel-toast";
+const MAX_VISIBLE = 3;
 let nextId = 1;
 
 /** Fire-and-forget notification — replaces blocking alert() dialogs. */
@@ -33,7 +34,9 @@ export default function Toaster() {
   useEffect(() => {
     const onToast = (event: Event) => {
       const detail = (event as CustomEvent<Toast>).detail;
-      setToasts((current) => [...current, detail]);
+      // At most three on screen. Beyond that they stop being a notification and
+      // become a wall the user has to clear before they can sell anything.
+      setToasts((current) => [...current, detail].slice(-MAX_VISIBLE));
       window.setTimeout(
         () => setToasts((current) => current.filter((item) => item.id !== detail.id)),
         4000,

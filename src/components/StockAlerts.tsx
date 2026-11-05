@@ -31,6 +31,11 @@ export default function StockAlerts() {
   // down past the level rather than on every re-render.
   const announced = useRef<Set<string>>(new Set());
   const primed = useRef(false);
+  // Dexie reports a bulk write one product at a time, so a transfer that empties
+  // the shelf arrives as a stream of single changes. Names are collected here
+  // and announced once, a beat later, instead of one toast per product.
+  const pending = useRef<Array<{ name: string; stockQty: number }>>([]);
+  const flushTimer = useRef<number | null>(null);
 
   const level = profile.lowStockAlert;
 
@@ -49,7 +54,10 @@ export default function StockAlerts() {
       if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", onClickAway);
-    return () => document.removeEventListener("mousedown", onClickAway);
+    return () => {
+      document.removeEventListener("mousedown", onClickAway);
+      if (flushTimer.current !== null) window.clearTimeout(flushTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -67,15 +75,43 @@ export default function StockAlerts() {
       return;
     }
 
-    for (const product of atRisk) {
-      if (announced.current.has(product.id)) continue;
+    // One toast for the whole batch. A bulk transfer or a big sale can push a
+    // dozen products under the level at once, and a dozen separate toasts bury
+    // the screen and have to be dismissed one by one. The bell already holds
+    // the detail, so the toast only has to say what needs looking at.
+    const fresh = atRisk.filter((product) => !announced.current.has(product.id));
+    for (const product of fresh) {
       announced.current.add(product.id);
-      toast(
-        product.stockQty <= 0
-          ? `${product.name} is out of stock.`
-          : `${product.name} is down to ${product.stockQty} left.`,
-        "error",
-      );
+      pending.current.push({ name: product.name, stockQty: product.stockQty });
+    }
+
+    if (fresh.length > 0) {
+      if (flushTimer.current !== null) window.clearTimeout(flushTimer.current);
+      flushTimer.current = window.setTimeout(() => {
+        flushTimer.current = null;
+        const batch = pending.current;
+        pending.current = [];
+        if (batch.length === 0) return;
+
+        if (batch.length === 1) {
+          const only = batch[0];
+          toast(
+            only.stockQty <= 0
+              ? `${only.name} is out of stock.`
+              : `${only.name} is down to ${only.stockQty} left.`,
+            "error",
+          );
+          return;
+        }
+
+        const outNow = batch.filter((item) => item.stockQty <= 0).length;
+        toast(
+          outNow === batch.length
+            ? `${batch.length} products are out of stock. Open the bell to see them.`
+            : `${batch.length} products are running low. Open the bell to see them.`,
+          "error",
+        );
+      }, 700);
     }
 
     // A product restocked above the level can raise the alarm again later.
