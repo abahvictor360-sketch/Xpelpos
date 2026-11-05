@@ -1,6 +1,6 @@
 {
   "name": "xpel-pos",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "private": true,
   "scripts": {
     "dev": "next dev",
